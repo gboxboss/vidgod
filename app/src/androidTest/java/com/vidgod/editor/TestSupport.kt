@@ -204,6 +204,28 @@ object Inspect {
         return T.save(sheet, name, jpeg = true)
     }
 
+    /** Labelled thumbnails in a grid, saved as `<name>.jpg`. */
+    fun grid(name: String, items: List<Pair<String, Bitmap?>>, cols: Int = 8, cell: Int = 200): File {
+        val rows = (items.size + cols - 1) / cols
+        val labelH = 26
+        val sheet = Bitmap.createBitmap(cols * (cell + 6) + 6, rows * (cell + labelH + 6) + 6, Bitmap.Config.ARGB_8888)
+        val c = Canvas(sheet)
+        c.drawColor(Color.rgb(40, 40, 48))
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; textSize = 18f }
+        items.forEachIndexed { i, (label, b) ->
+            val x = 6 + (i % cols) * (cell + 6)
+            val y = 6 + (i / cols) * (cell + labelH + 6)
+            if (b != null && b.width > 0 && b.height > 0) {
+                val scale = minOf(cell.toFloat() / b.width, cell.toFloat() / b.height)
+                val w = (b.width * scale).toInt().coerceAtLeast(1)
+                val h = (b.height * scale).toInt().coerceAtLeast(1)
+                c.drawBitmap(Bitmap.createScaledBitmap(b, w, h, true), (x + (cell - w) / 2).toFloat(), (y + (cell - h) / 2).toFloat(), null)
+            }
+            c.drawText(label.take(22), x.toFloat(), (y + cell + 20).toFloat(), paint)
+        }
+        return T.save(sheet, name, jpeg = true)
+    }
+
     /** Copies an RGBA_8888 [Image] (ImageReader) into a bitmap. */
     fun toBitmap(image: Image): Bitmap {
         val plane = image.planes[0]

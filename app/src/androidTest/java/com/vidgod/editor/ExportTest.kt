@@ -4,6 +4,9 @@ import androidx.media3.common.util.UnstableApi
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.vidgod.editor.editor.ProjectOps
 import com.vidgod.editor.engine.ExportController
+import com.vidgod.editor.engine.catalog.Effects
+import com.vidgod.editor.engine.catalog.Filters
+import com.vidgod.editor.engine.catalog.Transitions
 import com.vidgod.editor.features.Reverser
 import com.vidgod.editor.model.Adjust
 import com.vidgod.editor.model.AnimRef
@@ -38,7 +41,12 @@ import kotlin.math.abs
 @RunWith(AndroidJUnit4::class)
 class ExportTest {
 
-    private fun export(name: String, project: Project, settings: ExportSettings = ExportSettings()): Pair<File, VideoInfo> {
+    private fun export(
+        name: String,
+        project: Project,
+        settings: ExportSettings = ExportSettings(),
+        checkFrames: Boolean = true,
+    ): Pair<File, VideoInfo> {
         val result = runBlocking {
             withTimeout(300_000) {
                 withContext(Dispatchers.Main) { ExportController(T.app).export(project, settings) {} }
@@ -55,7 +63,7 @@ class ExportTest {
         })
         frames.forEach { (t, b) ->
             assertTrue("$name: no frame at $t", b != null)
-            assertTrue("$name: blank frame at $t", Inspect.stats(b!!).second > 4.0)
+            if (checkFrames) assertTrue("$name: blank frame at $t", Inspect.stats(b!!).second > 4.0)
         }
         return copy to info
     }
@@ -183,6 +191,52 @@ class ExportTest {
     fun pictureInPicture60() {
         val (_, info) = export("export_pip_60", pipProject(), ExportSettings(frameRate = 60))
         assertTikTokFormat("pip60", info, 4_000_000, 60.0)
+    }
+
+    /** Every effect of the catalog compiles and draws on a real GPU driver. */
+    @Test
+    fun allEffectsRender() {
+        val photo = T.source("photo.jpg")
+        val each = 250_000L
+        val clip = ProjectOps.visualFrom(photo).copy(trimEndUs = each * Effects.all.size)
+        val effects = Effects.all.mapIndexed { i, fx -> EffectClip(fx = FxRef(fx.id, 0.8f), startUs = i * each, durationUs = each) }
+        val (file, info) = export("export_all_effects", Project(clips = listOf(clip), effects = effects), ExportSettings(resolution = 480), checkFrames = false)
+        assertTrue("effects export too short: ${info.durationUs}", abs(info.durationUs - each * Effects.all.size) < 300_000)
+        // One frame per effect, to look at.
+        val frames = Inspect.frames(file, Effects.all.indices.map { (it + 0.5f) / Effects.all.size })
+        Inspect.grid("catalog_effects", Effects.all.zip(frames).map { (fx, f) -> fx.name to f.second }, cols = 10, cell = 160)
+    }
+
+    /** Every transition of the catalog compiles and draws on a real GPU driver. */
+    @Test
+    fun allTransitionsRender() {
+        val photo = T.source("photo.jpg")
+        val clips = Transitions.all.mapIndexed { i, tr ->
+            ProjectOps.visualFrom(photo).copy(
+                trimEndUs = 600_000,
+                transitionOut = TransitionRef(tr.id, 300_000),
+                transform = Transform(rotation = if (i % 2 == 0) 0f else 15f, scale = if (i % 2 == 0) 1f else 0.8f),
+            )
+        } + ProjectOps.visualFrom(photo).copy(trimEndUs = 600_000)
+        val p = Project(clips = clips)
+        val (file, _) = export("export_all_transitions", p, ExportSettings(resolution = 480), checkFrames = false)
+        val starts = p.clipStarts()
+        // A frame in the middle of each transition (the first 300 ms of clips 2..n).
+        val total = p.durationUs.toFloat()
+        val frames = Inspect.frames(file, (1 until clips.size).map { (starts[it] + 150_000) / total })
+        Inspect.grid("catalog_transitions", Transitions.all.zip(frames).map { (tr, f) -> tr.name to f.second }, cols = 8, cell = 160)
+    }
+
+    /** Every filter applies (one shader, many parameter sets). */
+    @Test
+    fun allFiltersRender() {
+        val photo = T.source("photo.jpg")
+        val each = 200_000L
+        val clips = Filters.all.map { f -> ProjectOps.visualFrom(photo).copy(trimEndUs = each, filter = FilterRef(f.id, 1f)) }
+        val p = Project(clips = clips)
+        val (file, _) = export("export_all_filters", p, ExportSettings(resolution = 480), checkFrames = false)
+        val frames = Inspect.frames(file, clips.indices.map { (it + 0.5f) / clips.size })
+        Inspect.grid("catalog_filters", Filters.all.zip(frames).map { (f, fr) -> f.name to fr.second }, cols = 10, cell = 160)
     }
 
     @Test
