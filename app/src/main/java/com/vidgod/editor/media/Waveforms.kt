@@ -13,8 +13,12 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.ceil
+import kotlin.math.cos
 import kotlin.math.max
+import kotlin.math.sin
 
 /** Decoded audio helpers: waveform peaks and mono PCM extraction. */
 object Waveforms {
@@ -166,23 +170,85 @@ object Waveforms {
 
     /** Decodes and resamples to mono 16-bit PCM at [targetRate] (for speech recognition). */
     fun decodeMono16(context: Context, uri: String, startUs: Long, endUs: Long, targetRate: Int, sink: (ShortArray, Int) -> Unit): Boolean {
-        var pos = 0.0
-        var outBuf = ShortArray(8192)
+        var resampler: MonoResampler? = null
+        var mono = FloatArray(8192)
         return decode(context, uri, startUs, endUs) { samples, count, channels, sampleRate, _ ->
             val frames = count / channels
-            val step = sampleRate.toDouble() / targetRate
-            var n = 0
-            if (outBuf.size < frames + 16) outBuf = ShortArray(frames + 16)
-            while (pos < frames) {
-                val idx = pos.toInt()
-                var mono = 0f
-                for (c in 0 until channels) mono += samples[idx * channels + c]
-                mono /= channels
-                outBuf[n++] = (mono * 32767f).coerceIn(-32768f, 32767f).toInt().toShort()
-                pos += step
+            if (mono.size < frames) mono = FloatArray(frames)
+            for (f in 0 until frames) {
+                var m = 0f
+                for (c in 0 until channels) m += samples[f * channels + c]
+                mono[f] = m / channels
             }
-            pos -= frames
-            if (n > 0) sink(outBuf, n)
+            val r = resampler?.takeIf { it.inRate == sampleRate } ?: MonoResampler(sampleRate, targetRate).also { resampler = it }
+            r.process(mono, frames, sink)
         }
+    }
+}
+
+/**
+ * Streaming mono resampler: a low-pass filter (windowed sinc) against aliasing when the rate goes
+ * down, then linear interpolation. Picking every n-th sample folds everything above the new
+ * Nyquist frequency (sibilants, music) back into the speech band, which hurts speech recognition.
+ */
+internal class MonoResampler(val inRate: Int, private val outRate: Int) {
+    // Filter length grows with the ratio, for a transition band of about 0.2 x the output rate.
+    private val half = if (inRate > outRate) ceil(16.0 * inRate / outRate).toInt() else 0
+    private val taps = FloatArray(2 * half + 1).also { t ->
+        if (half == 0) {
+            t[0] = 1f
+            return@also
+        }
+        val cutoff = 0.45 * outRate / inRate // cycles per input sample
+        val sinc = DoubleArray(t.size) { i ->
+            val k = i - half
+            val h = if (k == 0) 2 * cutoff else sin(2 * PI * cutoff * k) / (PI * k)
+            val blackman = 0.42 - 0.5 * cos(2 * PI * i / (t.size - 1)) + 0.08 * cos(4 * PI * i / (t.size - 1))
+            h * blackman
+        }
+        val sum = sinc.sum()
+        for (i in t.indices) t[i] = (sinc[i] / sum).toFloat()
+    }
+
+    /** The last input samples of the previous chunk (filter state). */
+    private val history = FloatArray(2 * half)
+    private var window = FloatArray(0)
+    private var filtered = FloatArray(0)
+    private var out = ShortArray(0)
+    private var last = 0f
+    // Output sample k lies at input position k * inRate / outRate (exact, in integers).
+    private var produced = 0L
+    private var consumed = 0L
+
+    fun process(input: FloatArray, n: Int, sink: (ShortArray, Int) -> Unit) {
+        if (n <= 0) return
+        val w = history.size
+        if (window.size < w + n) window = FloatArray(w + n)
+        System.arraycopy(history, 0, window, 0, w)
+        System.arraycopy(input, 0, window, w, n)
+        if (filtered.size < n) filtered = FloatArray(n)
+        for (j in 0 until n) {
+            var acc = 0f
+            for (k in taps.indices) acc += taps[k] * window[j + k]
+            filtered[j] = acc
+        }
+        System.arraycopy(window, n, history, 0, w)
+        // Linear interpolation over [last] + filtered.
+        val maxOut = (n.toLong() * outRate / inRate).toInt() + 2
+        if (out.size < maxOut) out = ShortArray(maxOut)
+        var m = 0
+        while (m < out.size) {
+            val num = produced * inRate - consumed * outRate // position in this chunk, times outRate
+            if (num >= n.toLong() * outRate) break
+            val i = (num / outRate).toInt()
+            val frac = (num % outRate).toFloat() / outRate
+            val a = if (i == 0) last else filtered[i - 1]
+            val b = filtered[i]
+            out[m++] = ((a + (b - a) * frac) * 32767f).coerceIn(-32768f, 32767f).toInt().toShort()
+            produced++
+        }
+        consumed += n
+        last = filtered[n - 1]
+        if (m > 0) sink(out, m)
     }
 }

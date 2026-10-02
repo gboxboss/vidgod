@@ -1,10 +1,14 @@
 package com.vidgod.editor
 
+import android.net.Uri
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.vidgod.editor.data.MediaProbe
 import com.vidgod.editor.editor.ProjectOps
 import com.vidgod.editor.features.AutoCaptions
 import com.vidgod.editor.features.TtsEngine
 import com.vidgod.editor.model.AudioClip
+import com.vidgod.editor.model.MediaKind
+import com.vidgod.editor.model.MediaSource
 import com.vidgod.editor.model.Project
 import com.vidgod.editor.model.TextStyle
 import kotlinx.coroutines.Dispatchers
@@ -25,30 +29,53 @@ class AiFeaturesTest {
     private fun hasAsset(name: String) =
         runCatching { T.instrumentation.context.assets.open("media/$name").close() }.isSuccess
 
-    /** The CI generates media/speech.wav with espeak-ng ("hello world, this is a caption test"). */
-    @Test
-    fun autoCaptionsTranscribeSpeech() {
-        assumeTrue("speech sample not generated", hasAsset("speech.wav"))
-        val speech = T.source("speech.wav")
-        T.log("speech source: $speech")
+    private fun transcribe(speech: MediaSource, lang: AutoCaptions.Language): List<AutoCaptions.Word> {
         val photo = ProjectOps.visualFrom(T.source("photo.jpg")).copy(trimEndUs = speech.durationUs.coerceAtLeast(1_000_000))
         val p = Project(
             clips = listOf(photo),
             audios = listOf(AudioClip(source = speech, trimEndUs = speech.durationUs)),
         )
-        val lang = AutoCaptions.languages.first { it.code == "en" }
-        val words = runBlocking {
-            withTimeout(600_000) {
-                if (!AutoCaptions.isInstalled(T.app, lang)) AutoCaptions.install(T.app, lang) {}
-                AutoCaptions.transcribe(T.app, p, lang, includeAudio = true) {}
-            }
+        return runBlocking { withTimeout(300_000) { AutoCaptions.transcribe(T.app, p, lang, includeAudio = true) {} } }
+    }
+
+    /** Speech from the device's text-to-speech engine (a natural voice), or null without one. */
+    private fun ttsSpeech(text: String): MediaSource? {
+        val engine = runBlocking { withContext(Dispatchers.Main) { TtsEngine(T.app) } }
+        try {
+            if (!runBlocking { engine.awaitReady() }) return null
+            val out = File(T.app.cacheDir, "captions-tts.wav").apply { delete() }
+            val ok = runBlocking { withTimeout(90_000) { engine.synthesize(text, out, Locale.US, null, 1f, 0.9f) } }
+            if (!ok) return null
+            return runBlocking { MediaProbe.probe(T.app, Uri.fromFile(out), MediaKind.AUDIO) }
+        } finally {
+            engine.shutdown()
         }
-        T.log("caption words: ${words.joinToString { "${it.word}@${it.startUs / 1000}ms" }}")
-        assertTrue("no words recognised", words.isNotEmpty())
-        val text = words.joinToString(" ") { it.word }.lowercase()
-        assertTrue("unexpected transcript: $text", listOf("hello", "world", "caption", "test").count { it in text } >= 2)
-        val captions = AutoCaptions.toCaptions(words, TextStyle())
-        assertTrue("no caption clips", captions.isNotEmpty())
+    }
+
+    /**
+     * Speech from the text-to-speech engine and the CI's espeak-ng sample (media/speech.wav, a
+     * robotic voice), both saying "hello world, this is a caption test", is transcribed offline.
+     */
+    @Test
+    fun autoCaptionsTranscribeSpeech() {
+        val lang = AutoCaptions.languages.first { it.code == "en" }
+        runBlocking { withTimeout(600_000) { if (!AutoCaptions.isInstalled(T.app, lang)) AutoCaptions.install(T.app, lang) {} } }
+        val samples = buildList {
+            ttsSpeech("Hello world. This is a caption test.")?.let { add("text to speech" to it) }
+            if (hasAsset("speech.wav")) add("espeak" to T.source("speech.wav"))
+        }
+        assumeTrue("no speech sample", samples.isNotEmpty())
+        val expected = listOf("hello", "world", "caption", "test")
+        var best = 0
+        for ((name, speech) in samples) {
+            val words = transcribe(speech, lang)
+            val text = words.joinToString(" ") { it.word }.lowercase()
+            val hits = expected.count { it in text }
+            T.log("captions from $name: \"$text\" ($hits of ${expected.size} words) " + words.joinToString { "${it.word}@${it.startUs / 1000}ms" })
+            if (words.isNotEmpty()) assertTrue("no caption clips", AutoCaptions.toCaptions(words, TextStyle()).isNotEmpty())
+            best = maxOf(best, hits)
+        }
+        assertTrue("speech not recognised (at best $best of ${expected.size} words)", best >= 3)
     }
 
     @Test
