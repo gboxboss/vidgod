@@ -60,6 +60,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.ContentScale
@@ -471,6 +472,9 @@ private fun TrimHandle(
             .width(HANDLE_W)
             .height(height)
             .testTag(if (left) "trim_start" else "trim_end")
+            // Above the neighbouring clips (the right handle overlaps the next clip), so the
+            // handle, not the next clip, receives the drag.
+            .zIndex(2f)
             .clip(
                 RoundedCornerShape(
                     topStart = if (left) 6.dp else 0.dp, bottomStart = if (left) 6.dp else 0.dp,

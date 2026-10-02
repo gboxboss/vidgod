@@ -3,7 +3,6 @@ package com.vidgod.editor.engine
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
-import android.os.SystemClock
 import android.util.Log
 import android.view.Surface
 import android.view.SurfaceView
@@ -166,10 +165,10 @@ class PreviewController(private val context: Context) {
 
     private var errorRetries = 0
 
-    private fun rebuildNow(project: Project, fromError: Boolean = false) {
+    private fun rebuildNow(project: Project, fromError: Boolean = false, playAfter: Boolean = false) {
         if (!fromError) errorRetries = 0
         handler.removeCallbacks(rebuild)
-        handler.removeCallbacks(seekRedraw)
+        handler.removeCallbacks(multiRebuild)
         val sig = Structure.signature(project) + "|" + previewShortSide
         signature = sig
         val built = runCatching { factory.build(project, live, previewShortSide, 30) }
@@ -211,32 +210,29 @@ class PreviewController(private val context: Context) {
             return
         }
         hasComposition = true
-        if (wasPlaying) np.play()
+        if (wasPlaying || playAfter) np.play()
         _error.value = null
     }
 
-    private var lastSeekRedrawMs = 0L
-    private val seekRedraw = Runnable {
-        lastSeekRedrawMs = SystemClock.uptimeMillis()
-        val p = player ?: return@Runnable
-        if (!p.isPlaying) p.seekTo(_positionUs.value / 1000)
+    /**
+     * Media3's multi-input graph (picture-in-picture) cannot seek: its compositor keeps the old
+     * frames and playback stalls. Seeks and live edits therefore recreate the player at the
+     * current position, debounced while scrubbing or dragging.
+     */
+    private val multiRebuild = Runnable { pendingProject?.let { rebuildNow(it) } ?: rebuildNow(live.project) }
+    private var scrubbing = false
+
+    private fun scheduleMultiRebuild(delayMs: Long) {
+        handler.removeCallbacks(multiRebuild)
+        handler.postDelayed(multiRebuild, delayMs)
     }
 
     /** Re-renders the current frame after a live property change. */
     fun redraw() {
         val p = player ?: return
         if (p.isPlaying || !hasComposition) return
-        if (playerStale) {
-            // Ended multi-input graph: recreate it (debounced, edits often come in bursts).
-            handler.removeCallbacks(rebuild)
-            handler.postDelayed(rebuild, 120)
-            return
-        }
-        if (multi) {
-            // Seek to the current frame, at most ~10 times per second while dragging.
-            handler.removeCallbacks(seekRedraw)
-            val wait = (lastSeekRedrawMs + 100 - SystemClock.uptimeMillis()).coerceAtLeast(0)
-            handler.postDelayed(seekRedraw, wait)
+        if (multi || playerStale) {
+            scheduleMultiRebuild(150)
             return
         }
         try {
@@ -248,8 +244,13 @@ class PreviewController(private val context: Context) {
 
     fun play() {
         if (player == null) return
-        if (_positionUs.value >= live.project.durationUs - 50_000) seekTo(0)
-        else if (playerStale && hasComposition) rebuildNow(pendingProject ?: live.project)
+        val atEnd = _positionUs.value >= live.project.durationUs - 50_000
+        if (atEnd) _positionUs.value = 0
+        if ((multi || playerStale) && hasComposition && (atEnd || playerStale)) {
+            rebuildNow(pendingProject ?: live.project, playAfter = true)
+            return
+        }
+        if (atEnd) player?.seekTo(0)
         player?.play()
     }
 
@@ -259,7 +260,7 @@ class PreviewController(private val context: Context) {
         p.pause()
         _positionUs.value = p.currentPosition * 1000
         // Frames that arrive late are dropped during playback; re-render the exact paused frame.
-        if (wasPlaying && hasComposition && !playerStale) p.seekTo(p.currentPosition)
+        if (wasPlaying && hasComposition && !playerStale && !multi) p.seekTo(p.currentPosition)
     }
 
     fun togglePlay() = if (player?.isPlaying == true) pause() else play()
@@ -267,15 +268,16 @@ class PreviewController(private val context: Context) {
     fun seekTo(us: Long) {
         val clamped = us.coerceIn(0, (live.project.durationUs - 1000).coerceAtLeast(0))
         _positionUs.value = clamped
-        if (playerStale && hasComposition) {
-            rebuildNow(pendingProject ?: live.project)
+        if ((multi || playerStale) && hasComposition) {
+            scheduleMultiRebuild(if (scrubbing) 150 else 0)
             return
         }
         player?.seekTo(clamped / 1000)
     }
 
     fun setScrubbing(enabled: Boolean) {
-        runCatching { player?.setScrubbingModeEnabled(enabled) }
+        scrubbing = enabled
+        if (!multi) runCatching { player?.setScrubbingModeEnabled(enabled) }
     }
 
     private var suspended = false

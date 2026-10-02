@@ -81,16 +81,21 @@ class UiFlowTest {
         device.findObject(By.text(java.util.regex.Pattern.compile("\\d\\d:\\d\\d / \\d\\d:\\d\\d")))?.text.orEmpty()
 
     /**
-     * Plays for [ms] and pauses, using UI Automator: while the video plays the UI updates
-     * continuously and Compose's test synchronisation would wait for the end of playback.
+     * Plays for [ms] and pauses. The play button is tapped through UI Automator at its position
+     * (while the video plays, the Compose test clock is not advanced, so the UI is not refreshed
+     * until playback stops); the time is read once the UI has settled.
      */
     private fun playFor(ms: Long): Pair<String, String> {
-        val before = uiTime()
-        checkNotNull(device.wait(Until.findObject(By.desc("Play")), 8_000)) { "No Play button" }.click()
+        compose.waitForIdle()
+        val before = timeText()
+        val button = checkNotNull(device.wait(Until.findObject(By.desc("Play")), 8_000)) { "No Play button" }
+        val c = button.visibleCenter
+        device.click(c.x, c.y)
         Thread.sleep(ms)
-        device.findObject(By.desc("Pause"))?.click()
-        Thread.sleep(1000)
-        val after = uiTime()
+        device.click(c.x, c.y)
+        Thread.sleep(800)
+        compose.waitForIdle()
+        val after = timeText()
         T.log("play before=$before after=$after")
         return before to after
     }
@@ -139,13 +144,15 @@ class UiFlowTest {
                 check(before != after) { "Dragging the timeline did not move the playhead ($before -> $after)" }
             }
             s.step("tap_clip_selects") {
-                compose.onNodeWithTag("main_track").performTouchInput { click(center) }
+                // Left of the playhead (which may sit at the very end after the scrub).
+                compose.onNodeWithTag("main_track").performTouchInput { click(Offset(width * 0.3f, centerY)) }
                 compose.await(hasText("Split"), 5_000)
                 tapIcon("Back")
                 compose.await(hasText("Stickers"), 5_000)
             }
             s.step("back_to_start") {
                 // Drag the timeline far right: the playhead goes back to the first clip.
+                compose.waitForIdle()
                 compose.onNodeWithTag("timeline").performTouchInput {
                     swipe(Offset(width * 0.05f, centerY), Offset(width * 0.95f, centerY), 500)
                 }

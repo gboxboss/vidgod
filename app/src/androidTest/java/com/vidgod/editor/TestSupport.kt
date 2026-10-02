@@ -123,11 +123,10 @@ object Inspect {
             val ax = MediaExtractor()
             ax.setDataSource(file.absolutePath)
             ax.selectTrack(a)
-            while (true) {
-                val t = ax.sampleTime
-                if (t < 0) break
-                audioLast = max(audioLast, t)
-                ax.advance()
+            // AAC tracks may start at a negative time (encoder delay): stop on the track index.
+            while (ax.sampleTrackIndex >= 0) {
+                audioLast = max(audioLast, ax.sampleTime)
+                if (!ax.advance()) break
             }
             ax.release()
         }
