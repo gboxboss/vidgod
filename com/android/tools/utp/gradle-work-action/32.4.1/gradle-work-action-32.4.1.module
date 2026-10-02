@@ -1,0 +1,164 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "com.android.tools.utp",
+    "module": "gradle-work-action",
+    "version": "32.4.1",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "9.6.0"
+    }
+  },
+  "variants": [
+    {
+      "name": "apiElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.jvm.version": 17,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.2.10"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "gradle-work-action-32.4.1.jar",
+          "url": "gradle-work-action-32.4.1.jar",
+          "size": 20175,
+          "sha512": "c4fafb27049750f9618d233541874c43486de2f256ba8e193f82c02c6de2f7b064c465102f476f2dbf9449a59da951645683190089242793cb362ad7d8596bcd",
+          "sha256": "0c0f314721010fc497e88fbaf3131f274b4356fe76f569a94bc443aa10b27aad",
+          "sha1": "cbad8ea5d0f222a23c946cd99ca88558fd0b0dd2",
+          "md5": "3ddf357a2cd73c36cff49d17cc3f0ff0"
+        }
+      ]
+    },
+    {
+      "name": "runtimeElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.jvm.version": 17,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "org.junit.platform",
+          "module": "junit-platform-launcher",
+          "version": {
+            "requires": "1.13.3"
+          }
+        },
+        {
+          "group": "org.junit.platform",
+          "module": "junit-platform-engine",
+          "version": {
+            "requires": "1.13.3"
+          }
+        },
+        {
+          "group": "com.android.tools.androidtest",
+          "module": "android-test-engine",
+          "version": {
+            "requires": "1.0.1"
+          }
+        },
+        {
+          "group": "com.android.tools.androidtest",
+          "module": "android-test-engine-result-listener",
+          "version": {
+            "requires": "1.0.1"
+          }
+        },
+        {
+          "group": "com.android.tools.androidtest",
+          "module": "test-result-proto",
+          "version": {
+            "requires": "1.0.1"
+          }
+        },
+        {
+          "group": "com.google.protobuf",
+          "module": "protobuf-java",
+          "version": {
+            "requires": "3.25.5"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.2.10"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "gradle-work-action-32.4.1.jar",
+          "url": "gradle-work-action-32.4.1.jar",
+          "size": 20175,
+          "sha512": "c4fafb27049750f9618d233541874c43486de2f256ba8e193f82c02c6de2f7b064c465102f476f2dbf9449a59da951645683190089242793cb362ad7d8596bcd",
+          "sha256": "0c0f314721010fc497e88fbaf3131f274b4356fe76f569a94bc443aa10b27aad",
+          "sha1": "cbad8ea5d0f222a23c946cd99ca88558fd0b0dd2",
+          "md5": "3ddf357a2cd73c36cff49d17cc3f0ff0"
+        }
+      ]
+    },
+    {
+      "name": "javadocElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "javadoc",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "gradle-work-action-32.4.1-javadoc.jar",
+          "url": "gradle-work-action-32.4.1-javadoc.jar",
+          "size": 261,
+          "sha512": "1487e5a20c9e4d74f298e07c42e96a61be11b7a768c3fbc199ee138cd68e1fc2267d1cfe3f11f288acc05df755315344d052cc5f6f751f126ab4fe1caa5125ea",
+          "sha256": "c6deada2fac53b8ea6523dbda77597b128006674616f140f04df23264c6d1aa3",
+          "sha1": "2ad14aed781c4a73ed4dbb421966d408a0a06686",
+          "md5": "f43436d6bec321290f6af228ad602604"
+        }
+      ]
+    },
+    {
+      "name": "sourcesElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "gradle-work-action-32.4.1-sources.jar",
+          "url": "gradle-work-action-32.4.1-sources.jar",
+          "size": 9902,
+          "sha512": "345bf1ef3d12d0959d9e43728a7d69e584481506363456d977eb5c3e891bfabbd58fa52da9fa5e594250f43a4f3961abb0c2c1d896ea9fe64c95649d6e868440",
+          "sha256": "f80cc5ce945550ed8da14f2ab0ea4daec3e14a356f8dda163eefaf57d9b6a647",
+          "sha1": "8d94218e81f279014eed1bdab9e53a0b6b6c126e",
+          "md5": "0b25911ea2b6059a4ede1f5fd37b6c29"
+        }
+      ]
+    }
+  ]
+}

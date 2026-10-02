@@ -1,0 +1,138 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "androidx.media3",
+    "module": "media3-effect",
+    "version": "1.11.1",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "9.1.0"
+    }
+  },
+  "variants": [
+    {
+      "name": "releaseVariantReleaseApiPublication",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.libraryelements": "aar",
+        "org.gradle.usage": "java-api"
+      },
+      "dependencies": [
+        {
+          "group": "androidx.media3",
+          "module": "media3-common",
+          "version": {
+            "requires": "1.11.1"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.2.10"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "media3-effect-1.11.1.aar",
+          "url": "media3-effect-1.11.1.aar",
+          "size": 402882,
+          "sha512": "e9d1026ee0d5b37fcac55a8ee8dfcd82839d5b5be59907fe63d4a297f1b26d7a8b4539909e01b6d9e24c43c57c0d83b970a10659d62bc3a140a873fa5b4ae4b2",
+          "sha256": "aacaf7d4cc410ee0e4fe731a1d1b156d22ce263a45bc6bf17a6dbd6f2182f0ab",
+          "sha1": "97b4dedacdd58b3b52096e4eeeb8c1eacef00740",
+          "md5": "1a212207d0d922c5cd1aa50a1e33d9cc"
+        }
+      ]
+    },
+    {
+      "name": "releaseVariantReleaseRuntimePublication",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.libraryelements": "aar",
+        "org.gradle.usage": "java-runtime"
+      },
+      "dependencies": [
+        {
+          "group": "androidx.annotation",
+          "module": "annotation",
+          "version": {
+            "requires": "1.6.0"
+          }
+        },
+        {
+          "group": "androidx.concurrent",
+          "module": "concurrent-futures",
+          "version": {
+            "requires": "1.2.0"
+          }
+        },
+        {
+          "group": "androidx.media3",
+          "module": "media3-datasource",
+          "version": {
+            "requires": "1.11.1"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlinx",
+          "module": "kotlinx-coroutines-guava",
+          "version": {
+            "requires": "1.9.0"
+          }
+        },
+        {
+          "group": "androidx.media3",
+          "module": "media3-common",
+          "version": {
+            "requires": "1.11.1"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.2.10"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "media3-effect-1.11.1.aar",
+          "url": "media3-effect-1.11.1.aar",
+          "size": 402882,
+          "sha512": "e9d1026ee0d5b37fcac55a8ee8dfcd82839d5b5be59907fe63d4a297f1b26d7a8b4539909e01b6d9e24c43c57c0d83b970a10659d62bc3a140a873fa5b4ae4b2",
+          "sha256": "aacaf7d4cc410ee0e4fe731a1d1b156d22ce263a45bc6bf17a6dbd6f2182f0ab",
+          "sha1": "97b4dedacdd58b3b52096e4eeeb8c1eacef00740",
+          "md5": "1a212207d0d922c5cd1aa50a1e33d9cc"
+        }
+      ]
+    },
+    {
+      "name": "releaseVariantReleaseSourcePublication",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "media3-effect-1.11.1-sources.jar",
+          "url": "media3-effect-1.11.1-sources.jar",
+          "size": 255898,
+          "sha512": "b2efe6b60dd94ea0f9af207306c082373cb32494abc4050b23653ee0bf716d3829b2ec5f81e339dc42e54028257882e828bba1883c505d27dd25a927fd44af0f",
+          "sha256": "a452414ffe8dbc89bf7958120694e061603babb919517b13b79849a01a91685d",
+          "sha1": "58e81972cdcc62f2d21559f80c7997a2ea058cc5",
+          "md5": "fcbc625f2cc0895ed403c14f5bb48382"
+        }
+      ]
+    }
+  ]
+}
