@@ -193,6 +193,29 @@ class ExportTest {
         assertTikTokFormat("pip60", info, 4_000_000, 60.0)
     }
 
+    /** Background removal (ML Kit), chroma key, masks and an image canvas background. */
+    @Test
+    fun cutoutFeatures() {
+        val portrait = ProjectOps.visualFrom(T.source("portrait.mp4"))
+        val clips = listOf(
+            portrait.copy(trimEndUs = 1_500_000, removeBackground = true),
+            portrait.copy(id = com.vidgod.editor.model.newId(), trimStartUs = 1_500_000, trimEndUs = 3_000_000,
+                chromaKey = com.vidgod.editor.model.ChromaKey(color = 0xFF00FF00.toInt(), intensity = 0.5f)),
+            ProjectOps.visualFrom(T.source("landscape60.mp4")).copy(
+                trimEndUs = 1_500_000, mask = com.vidgod.editor.model.Mask(com.vidgod.editor.model.MaskShape.HEART, width = 0.8f, height = 0.8f),
+                transform = Transform(scale = 0.7f),
+            ),
+        )
+        val p = Project(
+            clips = clips,
+            canvas = com.vidgod.editor.model.CanvasConfig(
+                background = com.vidgod.editor.model.BackgroundKind.IMAGE,
+                backgroundImageUri = T.uri("photo.jpg").toString(),
+            ),
+        )
+        export("export_cutouts", p)
+    }
+
     /** Every effect of the catalog compiles and draws on a real GPU driver. */
     @Test
     fun allEffectsRender() {

@@ -301,6 +301,7 @@ private class ClipCanvasProgram(
             bgImageTex = t[0]
         }
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, bgImageTex)
+        Shader.linearClamp()
         GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, bmp, 0)
         bgImageW = bmp.width
         bgImageH = bmp.height

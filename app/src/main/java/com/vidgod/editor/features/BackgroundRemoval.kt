@@ -75,6 +75,10 @@ class BackgroundRemovalEffect : GlEffect {
                     val t = IntArray(1)
                     GLES20.glGenTextures(1, t, 0)
                     maskTex = t[0]
+                    // Without these the texture has no mipmaps and is "incomplete": it would sample
+                    // as 0 and the whole frame (person included) would turn transparent.
+                    GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, maskTex)
+                    Shader.linearClamp()
                 }
                 val out = Fbo.current()
                 // 1. Downscale (flipped so rows come out top-down) and read back.

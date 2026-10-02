@@ -92,6 +92,17 @@ class Shader(vertexSource: String, fragmentSource: String) {
     }
 
     companion object {
+        /**
+         * Linear filtering and clamping for the texture bound to GL_TEXTURE_2D. Required for
+         * textures without mipmaps, which otherwise are "incomplete" and sample as black.
+         */
+        fun linearClamp() {
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
+        }
+
         private val QUAD: FloatBuffer = ByteBuffer.allocateDirect(8 * 4).order(ByteOrder.nativeOrder())
             .asFloatBuffer().apply {
                 put(floatArrayOf(-1f, -1f, 1f, -1f, -1f, 1f, 1f, 1f))

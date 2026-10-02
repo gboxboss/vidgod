@@ -59,6 +59,7 @@ object TransitionStore {
         val t = IntArray(1)
         GLES20.glGenTextures(1, t, 0)
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, t[0])
+        com.vidgod.editor.engine.gl.Shader.linearClamp()
         val px = java.nio.ByteBuffer.allocateDirect(4).put(byteArrayOf(0, 0, 0, -1)).apply { position(0) }
         GLES20.glTexImage2D(GLES20.GL_TEXTURE_2D, 0, GLES20.GL_RGBA, 1, 1, 0, GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, px)
         if (blackTex.size > 4) blackTex.clear()
