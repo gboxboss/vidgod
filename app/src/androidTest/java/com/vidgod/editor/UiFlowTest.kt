@@ -529,6 +529,15 @@ class UiFlowTest {
             s.step("editor_opened") {
                 compose.await(hasText("Export") and hasClickAction(), 40_000)
                 pause(3000)
+                // The first clip (a photo here) shows in the preview before anything is played.
+                val shot = checkNotNull(T.screenshot("picker_preview_paused")) { "No screenshot" }
+                val crop = android.graphics.Bitmap.createBitmap(
+                    shot, (shot.width * 0.35f).toInt(), (shot.height * 0.15f).toInt(),
+                    (shot.width * 0.3f).toInt(), (shot.height * 0.25f).toInt(),
+                )
+                val (mean, sd) = Inspect.stats(crop)
+                T.log("preview of the new project: mean=%.1f sd=%.1f".format(mean, sd))
+                check(sd > 4.0 || mean > 30.0) { "The preview is black until playing (mean=$mean, sd=$sd)" }
             }
             s.step("play") {
                 val (before, after) = playFor(2500)

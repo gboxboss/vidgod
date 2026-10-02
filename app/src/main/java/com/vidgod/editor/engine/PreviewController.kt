@@ -77,6 +77,15 @@ class PreviewController(private val context: Context) {
         }
 
         override fun onPlaybackStateChanged(playbackState: Int) {
+            if (playbackState == Player.STATE_READY && redrawOnReady) {
+                // Safety net: the first frame of a new player may have gone to a surface that was
+                // replaced meanwhile (e.g. while the editor screen was being laid out).
+                redrawOnReady = false
+                if (player?.playWhenReady == false) {
+                    handler.removeCallbacks(redrawAfterSurface)
+                    handler.postDelayed(redrawAfterSurface, 250)
+                }
+            }
             if (playbackState == Player.STATE_ENDED) {
                 player?.pause()
                 _positionUs.value = live.project.durationUs
@@ -98,7 +107,11 @@ class PreviewController(private val context: Context) {
         }
     }
 
+    /** Redraw once when a new (single-input) player becomes ready while paused. */
+    private var redrawOnReady = false
+
     private fun createPlayer(multi: Boolean): CompositionPlayer {
+        redrawOnReady = !multi
         val b = CompositionPlayer.Builder(context)
             .setAudioAttributes(AudioAttributes.DEFAULT, true)
         if (multi) {
