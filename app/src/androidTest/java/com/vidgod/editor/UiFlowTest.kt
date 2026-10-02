@@ -379,8 +379,22 @@ class UiFlowTest {
             s.step("ratio_1_1") {
                 tap("Ratio")
                 tap("1:1")
-                pause(2000)
-                T.screenshot("ui_ratio_square")
+                pause(2500)
+                // The canvas is square and the (portrait) video is centred in it.
+                val box = compose.onNodeWithTag("preview_canvas").fetchSemanticsNode().boundsInRoot
+                val shot = checkNotNull(T.screenshot("ui_ratio_square")) { "No screenshot" }
+                T.log("1:1 canvas: ${box.width} x ${box.height}")
+                check(kotlin.math.abs(box.width - box.height) < 4f) { "The canvas is not square (${box.width} x ${box.height})" }
+                val k = shot.width.toFloat() / device.displayWidth
+                val left = (box.left * k).toInt().coerceIn(0, shot.width - 2)
+                val top = (box.top * k).toInt().coerceIn(0, shot.height - 2)
+                val crop = android.graphics.Bitmap.createBitmap(
+                    shot, left, top,
+                    (box.width * k).toInt().coerceIn(1, shot.width - left), (box.height * k).toInt().coerceIn(1, shot.height - top),
+                )
+                val cx = Inspect.brightnessCentreX(crop)
+                T.log("1:1 preview: centre of brightness at x=%.2f".format(cx))
+                check(kotlin.math.abs(cx - 0.5) < 0.12) { "The video is not centred in the 1:1 canvas (centre at %.2f)".format(cx) }
                 tap("9:16")
                 pause(1500)
                 back()

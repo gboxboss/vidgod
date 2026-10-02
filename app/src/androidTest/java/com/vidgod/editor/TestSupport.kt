@@ -181,6 +181,20 @@ object Inspect {
         return mean to sqrt(max(0.0, sq / px.size - mean * mean))
     }
 
+    /** Horizontal centre of brightness, 0 (left edge) .. 1 (right edge). */
+    fun brightnessCentreX(b: Bitmap): Double {
+        val small = Bitmap.createScaledBitmap(b, 64, max(1, 64 * b.height / max(1, b.width)), true)
+        var sum = 0.0
+        var weighted = 0.0
+        for (x in 0 until small.width) for (y in 0 until small.height) {
+            val c = small.getPixel(x, y)
+            val l = 0.299 * Color.red(c) + 0.587 * Color.green(c) + 0.114 * Color.blue(c)
+            sum += l
+            weighted += l * (x + 0.5) / small.width
+        }
+        return if (sum > 0) weighted / sum else 0.5
+    }
+
     /** Puts labelled thumbnails side by side into one image, saved as `<name>.png`. */
     fun sheet(name: String, items: List<Pair<String, Bitmap?>>, thumbHeight: Int = 480): File {
         val thumbs = items.map { (label, b) ->
