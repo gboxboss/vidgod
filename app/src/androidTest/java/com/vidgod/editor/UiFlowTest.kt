@@ -239,8 +239,12 @@ class UiFlowTest {
                 check(before != after) { "Dragging the timeline did not move the playhead ($before -> $after)" }
             }
             s.step("tap_clip_selects") {
-                // Left of the playhead (which may sit at the very end after the scrub).
-                compose.onNodeWithTag("main_track").performTouchInput { click(Offset(width * 0.3f, centerY)) }
+                // The middle of the widest visible clip (near clip edges sit the transition buttons).
+                val clips = compose.onAllNodes(hasTestTag("main_clip")).fetchSemanticsNodes()
+                val i = clips.indices.maxByOrNull { clips[it].boundsInRoot.width } ?: error("No clips on the timeline")
+                val visible = clips[i].boundsInRoot
+                val local = visible.center - clips[i].positionInRoot
+                compose.onAllNodes(hasTestTag("main_clip"))[i].performTouchInput { click(local) }
                 compose.await(hasText("Split"), 5_000)
                 tapIcon("Back")
                 compose.await(hasText("Stickers"), 5_000)

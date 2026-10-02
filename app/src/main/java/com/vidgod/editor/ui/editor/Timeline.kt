@@ -609,6 +609,7 @@ private fun MainTrack(
                         .clip(RoundedCornerShape(6.dp))
                         .background(VG.TrackMain)
                         .border(if (selected) 2.dp else 0.dp, if (selected) Color.White else Color.Transparent, RoundedCornerShape(6.dp))
+                        .testTag("main_clip")
                         .pointerInput(clip.id) {
                             detectTapGestures(onTap = { vm.select(if (vm.selection.value == sel) null else sel) })
                         },

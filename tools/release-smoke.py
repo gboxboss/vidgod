@@ -121,8 +121,10 @@ def tap_scrolling(text, swipe, tries=4):
     raise RuntimeError(f"not found (after scrolling): {text}")
 
 
-TOOLBAR_LEFT = (0.85, 0.955, 0.25, 0.955)  # the editor's bottom toolbar scrolls sideways
-TOOLBAR_RIGHT = (0.25, 0.955, 0.85, 0.955)
+# The editor's bottom toolbar scrolls sideways. Swipe on its icons: lower down, a horizontal swipe is
+# the system's gesture for switching apps.
+TOOLBAR_LEFT = (0.85, 0.915, 0.25, 0.915)
+TOOLBAR_RIGHT = (0.25, 0.915, 0.85, 0.915)
 PANEL_UP = (0.5, 0.92, 0.5, 0.62)  # panel content scrolls up
 
 
