@@ -79,8 +79,11 @@ fun ExportOverlay(vm: EditorViewModel, project: Project, onClose: () -> Unit) {
         job = scope.launch {
             state = ExportState.Running(0)
             try {
-                val r = ExportController(context).export(vm.project.value, vm.project.value.export) { p ->
-                    state = ExportState.Running(p)
+                // Transformer must be driven from the main thread.
+                val r = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    ExportController(context).export(vm.project.value, vm.project.value.export) { p ->
+                        state = ExportState.Running(p)
+                    }
                 }
                 state = ExportState.Done(r.galleryUri, r.file.absolutePath, r.sizeBytes, r.durationMs)
             } catch (e: kotlinx.coroutines.CancellationException) {

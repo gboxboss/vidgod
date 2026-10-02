@@ -114,6 +114,13 @@ class PreviewController(private val context: Context) {
         }
     }
 
+    /** Releases a player without reporting its release problems (e.g. timeouts) as preview errors. */
+    private fun releaseQuietly(p: CompositionPlayer?) {
+        p ?: return
+        p.removeListener(listener)
+        runCatching { p.release() }
+    }
+
     private var outputSurface: Pair<Surface, Size>? = null
 
     /** Renders into [surface] instead of a SurfaceView (offscreen rendering, tests). */
@@ -186,7 +193,7 @@ class PreviewController(private val context: Context) {
         // The multi-input graph keeps its first composition's effects and inputs, so it is
         // recreated for every new composition (as Media3's own composition demo does).
         if (p == null || wantMulti || multi || playerStale) {
-            p?.release()
+            releaseQuietly(p)
             player = createPlayer(wantMulti)
             playerStale = false
         }
@@ -247,8 +254,12 @@ class PreviewController(private val context: Context) {
     }
 
     fun pause() {
-        player?.pause()
-        player?.let { _positionUs.value = it.currentPosition * 1000 }
+        val p = player ?: return
+        val wasPlaying = p.isPlaying
+        p.pause()
+        _positionUs.value = p.currentPosition * 1000
+        // Frames that arrive late are dropped during playback; re-render the exact paused frame.
+        if (wasPlaying && hasComposition && !playerStale) p.seekTo(p.currentPosition)
     }
 
     fun togglePlay() = if (player?.isPlaying == true) pause() else play()
@@ -276,7 +287,7 @@ class PreviewController(private val context: Context) {
     fun suspend() {
         suspended = true
         handler.removeCallbacksAndMessages(null)
-        player?.release()
+        releaseQuietly(player)
         player = null
         signature = null
         hasComposition = false
@@ -293,7 +304,7 @@ class PreviewController(private val context: Context) {
 
     fun release() {
         handler.removeCallbacksAndMessages(null)
-        player?.release()
+        releaseQuietly(player)
         player = null
         signature = null
         hasComposition = false

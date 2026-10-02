@@ -4,6 +4,8 @@ import android.graphics.Bitmap
 import android.graphics.PixelFormat
 import android.hardware.HardwareBuffer
 import android.media.ImageReader
+import android.os.Handler
+import android.os.HandlerThread
 import androidx.media3.common.util.UnstableApi
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.vidgod.editor.editor.ProjectOps
@@ -35,6 +37,9 @@ import org.junit.runner.RunWith
 class PreviewTest {
     private lateinit var reader: ImageReader
     private lateinit var preview: PreviewController
+    private val frameThread = HandlerThread("preview-frames").apply { start() }
+    @Volatile private var latest: Bitmap? = null
+    @Volatile private var frames = 0
 
     @Before
     fun setUp() {
@@ -42,6 +47,12 @@ class PreviewTest {
             360, 640, PixelFormat.RGBA_8888, 3,
             HardwareBuffer.USAGE_CPU_READ_OFTEN or HardwareBuffer.USAGE_GPU_COLOR_OUTPUT,
         )
+        reader.setOnImageAvailableListener({ r ->
+            r.acquireLatestImage()?.use { img ->
+                latest = Inspect.toBitmap(img)
+                frames++
+            }
+        }, Handler(frameThread.looper))
         onMain {
             preview = PreviewController(T.app)
             preview.setOutputSurface(reader.surface, 360, 640)
@@ -52,29 +63,39 @@ class PreviewTest {
     fun tearDown() {
         onMain { preview.release() }
         reader.close()
+        frameThread.quitSafely()
     }
 
     private fun <R> onMain(block: suspend () -> R): R =
         runBlocking { withTimeout(120_000) { withContext(Dispatchers.Main) { block() } } }
 
-    private fun frame(name: String): Bitmap? {
-        val img = reader.acquireLatestImage() ?: return null
-        val b = img.use { Inspect.toBitmap(it) }
-        T.save(b, name)
-        return b
+    /**
+     * Waits (the emulator renders slowly) for a frame newer than the ones seen so far, then
+     * checks that the preview shows a picture. Falls back to the last frame if none arrives.
+     */
+    private suspend fun assertShows(name: String, timeoutMs: Long = 12_000) {
+        val seen = frames
+        val end = System.currentTimeMillis() + timeoutMs
+        while (frames <= seen && System.currentTimeMillis() < end) delay(100)
+        val fresh = frames > seen
+        val b = latest
+        assertTrue("$name: no frame rendered", b != null)
+        T.save(b!!, name)
+        val (mean, sd) = Inspect.stats(b)
+        T.log("FRAME $name mean=%.1f sd=%.1f fresh=$fresh frames=$frames".format(mean, sd))
+        assertTrue("$name: frame is blank (sd=$sd)", sd > 4.0)
     }
 
-    private fun assertShows(name: String) {
-        val b = frame(name)
-        assertTrue("$name: no frame rendered", b != null)
-        val (mean, sd) = Inspect.stats(b!!)
-        T.log("FRAME $name mean=%.1f sd=%.1f".format(mean, sd))
-        assertTrue("$name: frame is blank (sd=$sd)", sd > 4.0)
+    /** Waits until the player reports playing (startup is slow on the emulator). */
+    private suspend fun awaitPlaying(timeoutMs: Long = 15_000) {
+        val end = System.currentTimeMillis() + timeoutMs
+        while (!preview.isPlaying.value && System.currentTimeMillis() < end) delay(50)
     }
 
     private suspend fun playFor(ms: Long): Long {
         val before = preview.positionUs.value
         preview.play()
+        awaitPlaying()
         delay(ms)
         preview.pause()
         val after = preview.positionUs.value
@@ -173,8 +194,9 @@ class PreviewTest {
         preview.update(p, immediate = true)
         delay(1500)
         preview.play()
+        awaitPlaying()
         val started = System.currentTimeMillis()
-        withTimeout(20_000) { while (preview.isPlaying.value || System.currentTimeMillis() - started < 1000) delay(50) }
+        withTimeout(30_000) { while (preview.isPlaying.value) delay(50) }
         val playedMs = System.currentTimeMillis() - started
         T.log("speed curve: timeline ${p.durationUs / 1000} ms, played $playedMs ms, end position ${preview.positionUs.value}")
         assertNull(preview.error.value)

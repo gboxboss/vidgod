@@ -14,7 +14,6 @@ import androidx.media3.common.audio.SonicAudioProcessor
 import androidx.media3.common.audio.SpeedProvider
 import androidx.media3.common.util.Size
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.effect.FrameDropEffect
 import androidx.media3.effect.StaticOverlaySettings
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.EditedMediaItem
@@ -123,10 +122,11 @@ class CompositionFactory(private val context: Context) {
             main.addItem(visualItem(clip, live, spec, project, frameRate, mainTrack = true))
         }
         sequences.add(main.build())
-        if (sequences.size > 1) {
-            // Picture-in-picture: the compositor takes output frame times from its first input and
-            // draws it on top. A hidden, transparent "clock" layer first keeps the output at
-            // exactly [frameRate] (instead of following the PIP layer's own frame times).
+        if (forExport || sequences.size > 1) {
+            // The compositor takes output frame times from its first input and draws it on top.
+            // A hidden, transparent "clock" layer first gives exports exactly [frameRate] frames
+            // per second (slow motion repeats frames, 60 fps footage is sampled down), and keeps
+            // picture-in-picture from following the PIP layer's own frame times.
             sequences.add(0, clockSequence(total, frameRate))
         }
         val videoSequenceCount = sequences.size
@@ -152,11 +152,6 @@ class CompositionFactory(private val context: Context) {
 
         // ---- whole-frame effects: filters, effects, texts & stickers ----
         val compositionEffects = ArrayList<Effect>()
-        if (forExport && videoSequenceCount == 1) {
-            // Honour the chosen frame rate for 60 fps (or faster) footage; the multi-layer path
-            // gets its rate from the clock layer.
-            compositionEffects.add(FrameDropEffect.createDefaultFrameDropEffect(frameRate.toFloat()))
-        }
         if (project.filters.isNotEmpty()) {
             compositionEffects.add(ColorGradeEffect(globalFilterProvider(live)))
         }

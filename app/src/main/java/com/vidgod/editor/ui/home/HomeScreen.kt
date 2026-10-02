@@ -138,7 +138,8 @@ fun HomeScreen(openEditor: (String, String?) -> Unit, vm: HomeViewModel = viewMo
             val action = pendingAction
             scope.launch {
                 val id = vm.create(uris, slideshow = action == "slideshow")
-                if (id != null) openEditor(id, action)
+                // Navigation must run on the main thread.
+                if (id != null) withContext(Dispatchers.Main) { openEditor(id, action) }
             }
         }
     }

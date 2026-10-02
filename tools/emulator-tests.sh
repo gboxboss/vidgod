@@ -63,6 +63,7 @@ fi
 
 kill $LOGCAT_PID 2>/dev/null
 adb pull "/sdcard/Android/data/$PKG/files/test-out" "$OUT/test-out" > /dev/null 2>&1 || true
+if command -v ffprobe > /dev/null; then bash tools/check-media.sh "$OUT/test-out" > "$OUT/media-check.txt" 2>&1; fi
 adb exec-out run-as $PKG cat files/diagnostics/errors.txt > "$OUT/app_errors.txt" 2>/dev/null || true
 adb exec-out run-as $PKG cat files/diagnostics/crash.txt > "$OUT/app_crash.txt" 2>/dev/null || true
 grep -E "AndroidRuntime|FATAL|VidGod|PreviewController|Transformer|CompositionPlayer|ExoPlayer|MediaCodec.*(E|W) |GlUtil|VideoFrameProcessor| E [A-Za-z]" "$OUT/logcat.txt" | grep -v -E "ResourcesCompat|chatty" | tail -4000 > "$OUT/logcat_filtered.txt" || true

@@ -131,6 +131,20 @@ class UiFlowTest {
                 tapIcon("Back")
                 compose.await(hasText("Stickers"), 5_000)
             }
+            s.step("back_to_start") {
+                // Drag the timeline far right: the playhead goes back to the first clip.
+                compose.onNodeWithTag("timeline").performTouchInput {
+                    swipe(Offset(width * 0.05f, centerY), Offset(width * 0.95f, centerY), 500)
+                }
+                pause(800)
+                compose.onNodeWithTag("timeline").performTouchInput {
+                    swipe(Offset(width * 0.05f, centerY), Offset(width * 0.95f, centerY), 500)
+                }
+                pause(1200)
+                val t = timeText()
+                T.log("after back_to_start: $t")
+                check(t.startsWith("00:00")) { "Playhead did not return to the start ($t)" }
+            }
             s.step("select_clip") {
                 tap("Edit")
                 compose.await(hasText("Split"), 5_000)

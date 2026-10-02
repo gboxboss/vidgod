@@ -37,6 +37,9 @@ for name, status, _ in rows:
 for name, status, stack in rows:
     if status != "PASS" and stack:
         print(f"\n## {name} ({status})\n```\n" + "\n".join(stack.splitlines()[:40]) + "\n```")
+media = os.path.join(out, "media-check.txt")
+if os.path.exists(media):
+    print("\n## Exported files (ffprobe / loudness)\n```\n" + open(media, errors="replace").read()[-12000:] + "\n```")
 smoke = os.path.join(out, "release-smoke", "smoke.txt")
 if os.path.exists(smoke):
     print("\n## Release APK smoke test\n```\n" + open(smoke, errors="replace").read()[-6000:] + "\n```")

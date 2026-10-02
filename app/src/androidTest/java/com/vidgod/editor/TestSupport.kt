@@ -116,17 +116,21 @@ object Inspect {
             }
             ex.unselectTrack(v)
         }
+        ex.release()
+        // A fresh extractor for the audio track (the first one already read to the end).
         var audioLast = 0L
         if (a >= 0) {
-            ex.selectTrack(a)
+            val ax = MediaExtractor()
+            ax.setDataSource(file.absolutePath)
+            ax.selectTrack(a)
             while (true) {
-                val t = ex.sampleTime
+                val t = ax.sampleTime
                 if (t < 0) break
                 audioLast = max(audioLast, t)
-                ex.advance()
+                ax.advance()
             }
+            ax.release()
         }
-        ex.release()
         val mmr = MediaMetadataRetriever()
         mmr.setDataSource(file.absolutePath)
         val duration = (mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L) * 1000
