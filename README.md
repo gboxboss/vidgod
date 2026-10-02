@@ -16,8 +16,8 @@ reorder, freeze frame, reverse (video + audio), speed 0.1×–100× with pitch l
 
 **Visuals:** 40+ filters with intensity, 14 adjustments (brightness, contrast, saturation,
 exposure, temperature, tint, highlights, shadows, vibrance, hue, sharpen, vignette, fade,
-grain), 50+ video effects (shake, glitch, VHS, old film, snow, sparkle, kaleidoscope, split
-screens, fisheye, neon…), 27 transitions (dissolve, push, slide, wipe, zoom, spin, glitch,
+grain), 56 video effects (shake, glitch, VHS, old film, snow, sparkle, kaleidoscope, split
+screens, fisheye, neon…), 32 transitions (dissolve, push, slide, wipe, zoom, spin, glitch,
 heart, circle…), in/out/combo animations, keyframes (position, scale, rotation, opacity,
 volume), masks (linear, mirror, circle, rectangle, heart, star) with feather/invert, chroma key
 (green screen), background removal (on-device ML Kit), crop, rotate, mirror, opacity,
@@ -54,3 +54,10 @@ app/src/main/java/com/vidgod/editor/
 ## Building
 Open in Android Studio (or run `./gradlew assembleRelease`). Requires JDK 17+.
 `tools/validate-shaders.sh` checks every GLSL shader with `glslangValidator`.
+
+## Testing
+Every push to a `claude/**` branch runs the app on an Android emulator
+(`.github/workflows/emulator-test.yml`): real exports checked with ffprobe, the preview player,
+a full tap-through of the editor, the system photo picker, every effect/transition/filter/font,
+and a smoke test of the minified release APK. Screenshots, frames of exported videos, logs and
+a summary land on the `ci-results` branch. See DEVELOPMENT.md.
