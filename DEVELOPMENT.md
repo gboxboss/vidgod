@@ -64,3 +64,22 @@ ui/         Compose UI: home/, editor/ (EditorScreen, Timeline, PreviewPane, Exp
 ## Debugging on a phone
 Crashes are saved and shown on the next launch with a *Share report* button; the home screen
 menu (⋮ → *Report a problem*) shares the recent error log.
+
+## Device tests (emulator)
+`app/src/androidTest` holds tests that run the real app on an Android emulator:
+* `ExportTest` exports projects (single clip, rotated phone clip, 60 fps, HEVC, photo slideshow,
+  a project using every feature, picture-in-picture at 30/60 fps, reverse) and checks the files:
+  H.264/AAC, 1080×1920, length, frame rate, non-blank frames.
+* `PreviewTest` drives the preview player into an offscreen surface: play, seek, live edits with
+  music, picture-in-picture replay after the end, speed curves.
+* `UiFlowTest` uses the app like a person (Compose test + UI Automator): opens media, plays, opens
+  every tool and panel, adds text and stickers, changes the ratio, exports; and the first-run path
+  through the system photo picker.
+
+`.github/workflows/emulator-test.yml` runs them on every push to a `claude/**` branch (API 34
+x86_64 emulator) plus `tools/release-smoke.py`, which drives the minified release APK with adb.
+Everything (screenshots, frames of exported videos, logcat, `SUMMARY.md`) is published to the
+`ci-results` branch: `git fetch origin ci-results && git checkout FETCH_HEAD -- .` in a scratch
+folder, or browse it on GitHub. Locally with a device/emulator attached:
+`./gradlew -Pvidgod.emulator assembleDebug assembleDebugAndroidTest && bash tools/emulator-tests.sh`.
+`-Pvidgod.emulator` keeps x86 native libraries and builds a single APK.
