@@ -57,7 +57,15 @@ done
 # The release APK (minified, as users install it) gets an adb-driven smoke test.
 REL=app/build/outputs/apk/release/app-release.apk
 if [ -f "$REL" ]; then
-  timeout 900 python3 tools/release-smoke.py "$OUT/release-smoke" "$REL" app/src/androidTest/assets/media/portrait.mp4 \
+  # A video with speech (CI generates the sample with espeak-ng) for auto captions.
+  SPEECH_WAV=app/src/androidTest/assets/media/speech.wav
+  SPEECH_MP4=
+  if [ -f "$SPEECH_WAV" ] && command -v ffmpeg > /dev/null; then
+    SPEECH_MP4=$(mktemp -d)/speech.mp4
+    ffmpeg -loglevel error -y -f lavfi -i color=c=0x2a4d8f:s=720x1280:r=30 -i "$SPEECH_WAV" -shortest \
+      -c:v libx264 -pix_fmt yuv420p -c:a aac -b:a 128k "$SPEECH_MP4" || SPEECH_MP4=
+  fi
+  timeout 1500 python3 tools/release-smoke.py "$OUT/release-smoke" "$REL" app/src/androidTest/assets/media/portrait.mp4 $SPEECH_MP4 \
     > "$OUT/release-smoke.txt" 2>&1 || echo "release smoke exit=$?" >> "$OUT/release-smoke.txt"
 fi
 
