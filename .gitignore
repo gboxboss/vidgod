@@ -1,0 +1,17 @@
+# Gradle / Android
+.gradle/
+build/
+local.properties
+captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+!dist/*.apk
+output-metadata.json
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.DS_Store

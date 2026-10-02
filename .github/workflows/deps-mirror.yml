@@ -1,0 +1,51 @@
+# Maintenance workflow (manual). Prints the newest library versions and, when the
+# Android project exists, publishes every Google-Maven-hosted dependency as a plain
+# Maven repository on the `deps-mirror` branch. That branch lets the app be built
+# on machines that cannot reach dl.google.com (see tools/offline-build.md).
+name: deps-mirror
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Probe latest library versions
+        run: python3 tools/probe_versions.py
+
+      - uses: actions/setup-java@v4
+        if: hashFiles('settings.gradle.kts') != ''
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Resolve all dependencies
+        if: hashFiles('settings.gradle.kts') != ''
+        env:
+          GRADLE_USER_HOME: ${{ runner.temp }}/gradle-home
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon --continue -I tools/resolve-all.init.gradle.kts \
+            resolveAllDependencies :app:assembleDebug :app:assembleRelease || true
+
+      - name: Publish mirror branch
+        if: hashFiles('settings.gradle.kts') != ''
+        env:
+          GRADLE_USER_HOME: ${{ runner.temp }}/gradle-home
+        run: |
+          python3 tools/cache_to_maven.py "$GRADLE_USER_HOME/caches/modules-2/files-2.1" "$RUNNER_TEMP/mirror"
+          cd "$RUNNER_TEMP/mirror"
+          du -sh .
+          git init -q -b deps-mirror
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Google Maven dependency mirror for ${GITHUB_SHA}"
+          git push -q --force "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git" deps-mirror
