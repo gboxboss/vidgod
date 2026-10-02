@@ -4,6 +4,10 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
+// `-Pvidgod.emulator` builds a single APK that also runs on x86/x86_64 emulators (used by the
+// emulator test workflow). Normal builds ship phone ABIs only, split per ABI.
+val emulatorBuild = providers.gradleProperty("vidgod.emulator").isPresent
+
 android {
     namespace = "com.vidgod.editor"
     compileSdk = 37
@@ -19,6 +23,7 @@ android {
         versionCode = buildMinute
         versionName = "1.0." + (System.getenv("VIDGOD_VERSION_CODE") ?: buildMinute.toString())
         vectorDrawables.useSupportLibrary = true
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     signingConfigs {
@@ -75,13 +80,13 @@ android {
             // Compressed native libraries keep the download small (ML Kit + Vosk are large).
             useLegacyPackaging = true
             // Phones only: drop emulator (x86) libraries.
-            excludes += listOf("lib/x86/**", "lib/x86_64/**")
+            if (!emulatorBuild) excludes += listOf("lib/x86/**", "lib/x86_64/**")
         }
     }
 
     splits {
         abi {
-            isEnable = true
+            isEnable = !emulatorBuild
             reset()
             include("arm64-v8a", "armeabi-v7a")
             isUniversalApk = true
@@ -133,5 +138,13 @@ dependencies {
     implementation(libs.vosk.android)
     implementation(libs.mlkit.segmentation.selfie)
 
-    testImplementation("junit:junit:4.13.2")
+    testImplementation(libs.junit)
+
+    androidTestImplementation(platform(libs.androidx.compose.bom))
+    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.rules)
+    androidTestImplementation(libs.androidx.test.core.ktx)
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.androidx.test.uiautomator)
 }

@@ -35,7 +35,8 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew --no-daemon --continue -I tools/resolve-all.init.gradle.kts \
-            resolveAllDependencies :app:assembleDebug :app:assembleRelease || true
+            resolveAllDependencies :app:assembleDebug :app:assembleRelease \
+            :app:assembleDebugAndroidTest -Pvidgod.emulator || true
 
       - name: Publish mirror branch
         if: hashFiles('settings.gradle.kts') != ''
