@@ -256,11 +256,14 @@ class PreviewController(private val context: Context) {
 
     fun pause() {
         val p = player ?: return
-        val wasPlaying = p.isPlaying
+        val wasPlaying = p.isPlaying || p.playWhenReady
         p.pause()
+        // While paused the playhead is ours (the player may still be at an older position until a
+        // pending seek or rebuild happens).
+        if (!wasPlaying) return
         _positionUs.value = p.currentPosition * 1000
         // Frames that arrive late are dropped during playback; re-render the exact paused frame.
-        if (wasPlaying && hasComposition && !playerStale && !multi) p.seekTo(p.currentPosition)
+        if (hasComposition && !playerStale && !multi) p.seekTo(p.currentPosition)
     }
 
     fun togglePlay() = if (player?.isPlaying == true) pause() else play()

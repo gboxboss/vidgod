@@ -127,6 +127,10 @@ fun EditorScreen(projectId: String, initialAction: String?, onBack: () -> Unit) 
     val snackbar = remember { SnackbarHostState() }
 
     LaunchedEffect(Unit) { vm.messages.collect { snackbar.showSnackbar(it) } }
+    // Pause (and save) when the app goes to the background, like any video app.
+    androidx.lifecycle.compose.LifecycleStartEffect(vm) {
+        onStopOrDispose { vm.onBackground() }
+    }
     LaunchedEffect(loaded) {
         if (loaded) when (initialAction) {
             "captions" -> vm.openPanel(Panel.CAPTIONS)

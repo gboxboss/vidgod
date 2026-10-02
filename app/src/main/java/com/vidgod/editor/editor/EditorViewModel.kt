@@ -71,12 +71,17 @@ class EditorViewModel(app: Application, val projectId: String) : AndroidViewMode
     private var saveJob: Job? = null
     /** Last state written to disk (or loaded); avoids saving unchanged or stale copies. */
     @Volatile private var lastSaved: Project? = null
+    /** First clip (source and trim) of the project as loaded, which its cover shows. */
+    private var coverKey: Any? = null
     var busyJob: Job? = null
+
+    private fun coverKeyOf(p: Project): Any? = p.clips.firstOrNull()?.let { it.playbackUri to it.trimStartUs }
 
     init {
         viewModelScope.launch {
             val p = repo.load(projectId) ?: Project(id = projectId)
             lastSaved = p
+            coverKey = coverKeyOf(p)
             _project.value = p
             preview.update(p)
             _loaded.value = true
@@ -170,6 +175,18 @@ class EditorViewModel(app: Application, val projectId: String) : AndroidViewMode
         }
     }
 
+    /** The app went to the background (another app, screen off): stop playback and save now. */
+    fun onBackground() {
+        preview.pause()
+        val p = _project.value
+        if (!loaded.value || p === lastSaved) return
+        saveJob?.cancel()
+        saveJob = vg.appScope.launch {
+            repo.save(p)
+            lastSaved = p
+        }
+    }
+
     private fun scheduleSave() {
         saveJob?.cancel()
         saveJob = viewModelScope.launch {
@@ -222,6 +239,7 @@ class EditorViewModel(app: Application, val projectId: String) : AndroidViewMode
                 ProjectOps.insertMain(p, clips, index)
             }
             val now = _project.value
+            coverKey = coverKeyOf(now)
             vg.appScope.launch { writeCover(now) }
         }
     }
@@ -570,8 +588,7 @@ class EditorViewModel(app: Application, val projectId: String) : AndroidViewMode
     override fun onCleared() {
         val p = _project.value
         val changed = loaded.value && p !== lastSaved
-        val firstClipChanged = p.clips.firstOrNull()?.let { it.playbackUri to it.trimStartUs } !=
-            lastSaved?.clips?.firstOrNull()?.let { it.playbackUri to it.trimStartUs }
+        val firstClipChanged = coverKeyOf(p) != coverKey
         preview.release()
         vg.appScope.launch {
             // Only save real changes, so that leaving an editor never overwrites newer data.

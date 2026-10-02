@@ -188,6 +188,28 @@ class UiFlowTest {
                 val (before, after) = playFor(2500)
                 check(before != after) { "Playback did not move the playhead ($before -> $after)" }
             }
+            s.step("background_pauses") {
+                // Playing, then another app comes to the front: playback must stop.
+                compose.waitForIdle()
+                val button = checkNotNull(device.wait(Until.findObject(By.desc("Play")), 8_000)) { "No Play button" }
+                val c = button.visibleCenter
+                device.click(c.x, c.y)
+                Thread.sleep(1200)
+                device.pressHome()
+                Thread.sleep(2500)
+                T.app.startActivity(
+                    Intent(T.app, MainActivity::class.java)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT),
+                )
+                check(device.wait(Until.hasObject(By.desc("Play")), 10_000)) { "Still playing after the app went to the background" }
+                pause(1000)
+                val t1 = timeText()
+                Thread.sleep(1500)
+                compose.waitForIdle()
+                val t2 = timeText()
+                T.log("after background: $t1 -> $t2")
+                check(t1 == t2) { "The playhead moves while paused ($t1 -> $t2)" }
+            }
             s.step("scrub_timeline") {
                 val before = timeText()
                 compose.onNodeWithTag("timeline").performTouchInput {
