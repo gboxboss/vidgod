@@ -312,7 +312,7 @@ private fun ControlsRow(
         )
         Spacer(Modifier.weight(1f))
         IconButton(onClick = onPlay) {
-            Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, "Play", tint = VG.Text, modifier = Modifier.size(30.dp))
+            Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, if (playing) "Pause" else "Play", tint = VG.Text, modifier = Modifier.size(30.dp))
         }
         Spacer(Modifier.weight(1f))
         Row(Modifier.width(150.dp), horizontalArrangement = Arrangement.End) {
@@ -479,7 +479,7 @@ private fun FullscreenPreview(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = { vm.preview.togglePlay() }) {
-                Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, "Play", tint = Color.White)
+                Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, if (playing) "Pause" else "Play", tint = Color.White)
             }
             val dur = project.durationUs.coerceAtLeast(1)
             androidx.compose.material3.Slider(

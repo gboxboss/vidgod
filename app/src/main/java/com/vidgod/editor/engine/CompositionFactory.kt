@@ -170,11 +170,14 @@ class CompositionFactory(private val context: Context) {
         }
         compositionEffects.addAll(OverlayLanes.effects(context, live, project, cw, ch))
 
+        // Always give exported files an audio track (silent if needed); some apps expect one.
+        // (Media3's forceAudioTrack adds audio to every layer and fails for image-only layers.)
+        if (forExport && sequences.none { C.TRACK_TYPE_AUDIO in it.trackTypes }) {
+            sequences.add(silenceSequence())
+        }
         val builder = Composition.Builder(sequences)
             .setHdrMode(Composition.HDR_MODE_TONE_MAP_HDR_TO_SDR_USING_OPEN_GL)
             .setEffects(Effects(emptyList(), compositionEffects))
-        // Always give exported files an audio track (silent if needed); some apps expect one.
-        if (forExport) builder.experimentalSetForceAudioTrack(true)
         if (videoSequenceCount > 1) {
             builder.setVideoCompositorSettings(compositorSettings(cw, ch, layerRanges))
         }
@@ -192,6 +195,33 @@ class CompositionFactory(private val context: Context) {
                 return HIDDEN
             }
         }
+
+    /** One second of silence, repeated for the whole export. */
+    private fun silenceSequence(): EditedMediaItemSequence {
+        val item = EditedMediaItem.Builder(MediaItem.fromUri(Uri.fromFile(silenceFile())))
+            .setDurationUs(1_000_000)
+            .build()
+        return EditedMediaItemSequence.Builder(setOf(C.TRACK_TYPE_AUDIO)).addItem(item).setIsLooping(true).build()
+    }
+
+    private fun silenceFile(): File {
+        val f = File(context.cacheDir, "silence_1s.wav")
+        if (f.length() > 44) return f
+        val rate = 44_100
+        val channels = 2
+        val dataLen = rate * channels * 2
+        val header = java.nio.ByteBuffer.allocate(44).order(java.nio.ByteOrder.LITTLE_ENDIAN).apply {
+            put("RIFF".toByteArray()); putInt(36 + dataLen); put("WAVE".toByteArray())
+            put("fmt ".toByteArray()); putInt(16); putShort(1); putShort(channels.toShort())
+            putInt(rate); putInt(rate * channels * 2); putShort((channels * 2).toShort()); putShort(16)
+            put("data".toByteArray()); putInt(dataLen)
+        }
+        f.outputStream().use { out ->
+            out.write(header.array())
+            out.write(ByteArray(dataLen))
+        }
+        return f
+    }
 
     /** A transparent still image spanning the project, emitting frames at [frameRate]. */
     private fun clockSequence(durationUs: Long, frameRate: Int): EditedMediaItemSequence {

@@ -76,6 +76,25 @@ class UiFlowTest {
         pause(500)
     }
 
+    /** The "00:02 / 00:10" label, read through UI Automator (no Compose idling while playing). */
+    private fun uiTime(): String =
+        device.findObject(By.text(java.util.regex.Pattern.compile("\\d\\d:\\d\\d / \\d\\d:\\d\\d")))?.text.orEmpty()
+
+    /**
+     * Plays for [ms] and pauses, using UI Automator: while the video plays the UI updates
+     * continuously and Compose's test synchronisation would wait for the end of playback.
+     */
+    private fun playFor(ms: Long): Pair<String, String> {
+        val before = uiTime()
+        checkNotNull(device.wait(Until.findObject(By.desc("Play")), 8_000)) { "No Play button" }.click()
+        Thread.sleep(ms)
+        device.findObject(By.desc("Pause"))?.click()
+        Thread.sleep(1000)
+        val after = uiTime()
+        T.log("play before=$before after=$after")
+        return before to after
+    }
+
     private fun timeText(): String =
         compose.onAllNodes(hasText(" / ", substring = true)).fetchSemanticsNodes()
             .firstOrNull()?.config?.getOrNull(SemanticsProperties.Text)?.joinToString { it.text }.orEmpty()
@@ -106,13 +125,7 @@ class UiFlowTest {
                 pause(3000)
             }
             s.step("play_pause") {
-                val before = timeText()
-                tapIcon("Play")
-                pause(2500)
-                tapIcon("Play")
-                pause(500)
-                val after = timeText()
-                T.log("time before=$before after=$after")
+                val (before, after) = playFor(2500)
                 check(before != after) { "Playback did not move the playhead ($before -> $after)" }
             }
             s.step("scrub_timeline") {
@@ -238,13 +251,7 @@ class UiFlowTest {
                 pause(800)
             }
             s.step("play_after_edits") {
-                val before = timeText()
-                tapIcon("Play")
-                pause(2500)
-                tapIcon("Play")
-                pause(500)
-                val after = timeText()
-                T.log("time before=$before after=$after")
+                val (before, after) = playFor(2500)
                 check(before != after) { "Playback after edits did not move the playhead ($before -> $after)" }
             }
             s.step("export") {
@@ -317,12 +324,8 @@ class UiFlowTest {
                 pause(3000)
             }
             s.step("play") {
-                val before = timeText()
-                tapIcon("Play")
-                pause(2500)
-                tapIcon("Play")
-                pause(500)
-                check(before != timeText()) { "Playback did not move the playhead" }
+                val (before, after) = playFor(2500)
+                check(before != after) { "Playback did not move the playhead ($before -> $after)" }
             }
             dumpDiagnostics("picker")
         }

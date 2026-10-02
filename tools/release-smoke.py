@@ -159,7 +159,10 @@ def play():
     before = time_text()
     tap(desc="Play")
     time.sleep(2.5)
-    tap(desc="Play")
+    p = find(dump(), desc="Pause")
+    if p:
+        adb("shell", "input", "tap", str(p[0]), str(p[1]))
+        time.sleep(1)
     after = time_text()
     log(f"time {before} -> {after}")
     if before == after:

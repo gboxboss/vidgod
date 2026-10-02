@@ -253,9 +253,10 @@ fun Timeline(
             lanesScroll.animateScrollTo(target.coerceAtMost(lanesScroll.maxValue))
         }
 
-        Column(Modifier.fillMaxWidth().then(gestureModifier)) {
+        // The whole timeline area (also below the tracks) scrubs, like CapCut.
+        Column(Modifier.fillMaxSize().then(gestureModifier)) {
             Ruler(state, geo, duration)
-            Box(Modifier.fillMaxWidth().weight(1f, fill = false).verticalScroll(lanesScroll)) {
+            Box(Modifier.fillMaxWidth().weight(1f).verticalScroll(lanesScroll)) {
                 Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
                     project.overlays.map { it.layer }.distinct().sortedDescending().forEach { layer ->
                         Lane(ROW_OVERLAY) {
