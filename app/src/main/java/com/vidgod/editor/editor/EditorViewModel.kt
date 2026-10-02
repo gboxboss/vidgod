@@ -69,11 +69,14 @@ class EditorViewModel(app: Application, val projectId: String) : AndroidViewMode
     val canRedo: StateFlow<Boolean> = _canRedo.asStateFlow()
     private var gestureSnapshot: Project? = null
     private var saveJob: Job? = null
+    /** Last state written to disk (or loaded); avoids saving unchanged or stale copies. */
+    @Volatile private var lastSaved: Project? = null
     var busyJob: Job? = null
 
     init {
         viewModelScope.launch {
             val p = repo.load(projectId) ?: Project(id = projectId)
+            lastSaved = p
             _project.value = p
             preview.update(p)
             _loaded.value = true
@@ -91,8 +94,9 @@ class EditorViewModel(app: Application, val projectId: String) : AndroidViewMode
     /** Applies [f]. With [record], the previous state is pushed to the undo history. */
     fun update(record: Boolean = true, f: (Project) -> Project) {
         val old = _project.value
-        val new = f(old).copy(updatedAt = System.currentTimeMillis())
-        if (new == old) return
+        val changed = f(old)
+        if (changed == old) return
+        val new = changed.copy(updatedAt = System.currentTimeMillis())
         if (record && gestureSnapshot == null) {
             undoStack.addLast(old)
             if (undoStack.size > 80) undoStack.removeFirst()
@@ -122,23 +126,35 @@ class EditorViewModel(app: Application, val projectId: String) : AndroidViewMode
     }
 
     fun undo() {
-        val prev = undoStack.removeLastOrNull() ?: return
-        redoStack.addLast(_project.value)
-        _project.value = prev
-        preview.update(prev)
-        validateSelection(prev)
-        refreshHistoryFlags()
-        scheduleSave()
+        // A panel may hold a gesture open (e.g. the text editor): close it first so that its
+        // changes become the step being undone, then keep tracking the panel's later edits.
+        val hadGesture = gestureSnapshot != null
+        endGesture()
+        val prev = undoStack.removeLastOrNull()
+        if (prev != null) {
+            redoStack.addLast(_project.value)
+            _project.value = prev
+            preview.update(prev)
+            validateSelection(prev)
+            refreshHistoryFlags()
+            scheduleSave()
+        }
+        if (hadGesture) beginGesture()
     }
 
     fun redo() {
-        val next = redoStack.removeLastOrNull() ?: return
-        undoStack.addLast(_project.value)
-        _project.value = next
-        preview.update(next)
-        validateSelection(next)
-        refreshHistoryFlags()
-        scheduleSave()
+        val hadGesture = gestureSnapshot != null
+        endGesture()
+        val next = redoStack.removeLastOrNull()
+        if (next != null) {
+            undoStack.addLast(_project.value)
+            _project.value = next
+            preview.update(next)
+            validateSelection(next)
+            refreshHistoryFlags()
+            scheduleSave()
+        }
+        if (hadGesture) beginGesture()
     }
 
     private fun refreshHistoryFlags() {
@@ -158,7 +174,9 @@ class EditorViewModel(app: Application, val projectId: String) : AndroidViewMode
         saveJob?.cancel()
         saveJob = viewModelScope.launch {
             delay(700)
-            repo.save(_project.value)
+            val p = _project.value
+            repo.save(p)
+            lastSaved = p
         }
     }
 
@@ -203,7 +221,8 @@ class EditorViewModel(app: Application, val projectId: String) : AndroidViewMode
                 }
                 ProjectOps.insertMain(p, clips, index)
             }
-            makeCover()
+            val now = _project.value
+            vg.appScope.launch { writeCover(now) }
         }
     }
 
@@ -468,7 +487,7 @@ class EditorViewModel(app: Application, val projectId: String) : AndroidViewMode
         val uv = com.vidgod.editor.engine.LayerMath.canvasToSource(clip, local, nx, ny, cw, ch)
             ?: return toast("Tap inside the clip")
         viewModelScope.launch {
-            val frame = if (clip.isImage) Thumbnails.loadImage(getApplication(), clip.playbackUri, 512)
+            val frame = if (clip.isImage) withContext(Dispatchers.IO) { Thumbnails.loadImage(getApplication(), clip.playbackUri, 512) }
             else Thumbnails.exactFrame(getApplication(), clip.playbackUri, ProjectOps.sourceTimeAt(clip, local), 512)
             if (frame == null) return@launch toast("Could not read the frame")
             val x = (uv.first * frame.width).toInt().coerceIn(0, frame.width - 1)
@@ -493,7 +512,7 @@ class EditorViewModel(app: Application, val projectId: String) : AndroidViewMode
         viewModelScope.launch {
             _busy.value = Busy("Creating freeze frame…")
             val src = clip.timelineToSource(offset)
-            val bmp = if (clip.isImage) Thumbnails.loadImage(getApplication(), clip.source.uri, 2160)
+            val bmp = if (clip.isImage) withContext(Dispatchers.IO) { Thumbnails.loadImage(getApplication(), clip.source.uri, 2160) }
             else Thumbnails.exactFrame(getApplication(), clip.playbackUri, src, 2160)
             if (bmp == null) { _busy.value = null; return@launch toast("Could not read that frame") }
             val file = File(repo.mediaDir(projectId), "freeze_${System.currentTimeMillis()}.jpg")
@@ -515,12 +534,11 @@ class EditorViewModel(app: Application, val projectId: String) : AndroidViewMode
 
     // ---------------------------------------------------------------- cover
 
-    fun makeCover() {
-        val first = _project.value.clips.firstOrNull() ?: return
-        vg.appScope.launch {
-            val bmp = Thumbnails.get(getApplication(), first.playbackUri, first.trimStartUs, 480, first.isImage) ?: return@launch
-            repo.saveCover(projectId, bmp)
-        }
+    /** Writes the project's cover (first frame) for the home screen. */
+    private suspend fun writeCover(p: Project) {
+        val first = p.clips.firstOrNull() ?: return
+        val bmp = Thumbnails.get(getApplication(), first.playbackUri, first.trimStartUs, 480, first.isImage) ?: return
+        repo.saveCover(p.id, bmp)
     }
 
     fun runBusy(label: String, block: suspend () -> Unit) {
@@ -551,12 +569,16 @@ class EditorViewModel(app: Application, val projectId: String) : AndroidViewMode
 
     override fun onCleared() {
         val p = _project.value
+        val changed = loaded.value && p !== lastSaved
+        val firstClipChanged = p.clips.firstOrNull()?.let { it.playbackUri to it.trimStartUs } !=
+            lastSaved?.clips?.firstOrNull()?.let { it.playbackUri to it.trimStartUs }
+        preview.release()
         vg.appScope.launch {
-            repo.save(p)
+            // Only save real changes, so that leaving an editor never overwrites newer data.
+            if (changed) repo.save(p)
+            if (loaded.value && (firstClipChanged || !repo.coverFile(projectId).exists())) writeCover(p)
             repo.refresh()
         }
-        makeCover()
-        preview.release()
         super.onCleared()
     }
 

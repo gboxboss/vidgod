@@ -148,10 +148,11 @@ fun ReorderPanel(vm: EditorViewModel, p: Project, close: () -> Unit) {
         PanelHeader("Reorder clips", close)
         Text("Use the arrows to move clips. Tap a clip to select it.", color = VG.TextDim, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 16.dp))
         Row(Modifier.horizontalScroll(rememberScrollState()).padding(12.dp)) {
-            p.clips.forEachIndexed { i, c ->
+            p.clips.forEachIndexed { i, c -> androidx.compose.runtime.key(c.id) {
                 Column(Modifier.padding(4.dp).width(84.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    val bmp by produceState(Thumbnails.cached(c.playbackUri, c.trimStartUs, 200), c.id) {
-                        if (value == null) value = Thumbnails.get(context, c.playbackUri, c.trimStartUs, 200, c.isImage)
+                    var bmp by remember(c.playbackUri, c.trimStartUs) { mutableStateOf(Thumbnails.cached(c.playbackUri, c.trimStartUs, 200)) }
+                    androidx.compose.runtime.LaunchedEffect(c.playbackUri, c.trimStartUs) {
+                        if (bmp == null) bmp = Thumbnails.get(context, c.playbackUri, c.trimStartUs, 200, c.isImage)
                     }
                     Box(
                         Modifier.size(80.dp).clip(RoundedCornerShape(8.dp)).background(VG.Surface2)
@@ -176,7 +177,7 @@ fun ReorderPanel(vm: EditorViewModel, p: Project, close: () -> Unit) {
                         }
                     }
                 }
-            }
+            } }
         }
     }
 }

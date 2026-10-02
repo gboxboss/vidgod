@@ -342,13 +342,16 @@ private fun ProjectCard(
 ) {
     var menu by remember { mutableStateOf(false) }
     val context = LocalContext.current
-    val cover = remember(p.coverFile, p.updatedAt) {
-        p.coverFile?.let { f -> runCatching { BitmapFactory.decodeFile(f.absolutePath)?.asImageBitmap() }.getOrNull() }
+    val cover by androidx.compose.runtime.produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, p.coverFile, p.coverStamp) {
+        value = withContext(Dispatchers.IO) {
+            p.coverFile?.let { f -> runCatching { BitmapFactory.decodeFile(f.absolutePath)?.asImageBitmap() }.getOrNull() }
+        }
     }
     Column(Modifier.clip(RoundedCornerShape(12.dp)).background(VG.Surface).clickable(onClick = onOpen)) {
         Box(Modifier.fillMaxWidth().aspectRatio(0.8f).background(VG.Surface2), contentAlignment = Alignment.Center) {
-            if (cover != null) {
-                Image(cover, null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+            val c = cover
+            if (c != null) {
+                Image(c, null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
             } else {
                 Icon(Icons.Default.Movie, null, tint = VG.TextDim, modifier = Modifier.size(36.dp))
             }

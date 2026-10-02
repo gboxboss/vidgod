@@ -312,7 +312,8 @@ object ProjectOps {
 
     /** Trims a main or overlay clip; [newStartSrc]/[newEndSrc] are source times. */
     fun trimVisual(c: VisualClip, newStartSrc: Long, newEndSrc: Long): VisualClip {
-        val maxEnd = if (c.isImage) Long.MAX_VALUE / 4 else c.source.durationUs
+        // The probed length can be missing (0) for some files: never go below the current trim.
+        val maxEnd = if (c.isImage) Long.MAX_VALUE / 4 else maxOf(c.source.durationUs, c.trimEndUs, 2 * MIN_DURATION_US)
         val s = newStartSrc.coerceIn(0, maxEnd - MIN_DURATION_US)
         val e = newEndSrc.coerceIn(s + MIN_DURATION_US, maxEnd)
         return c.copy(trimStartUs = if (c.isImage) 0 else s, trimEndUs = if (c.isImage) e - s else e)

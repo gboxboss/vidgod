@@ -135,6 +135,21 @@ class UiFlowTest {
                 tap("Edit")
                 compose.await(hasText("Split"), 5_000)
             }
+            s.step("trim_clip_end") {
+                val before = timeText().substringAfter(" / ")
+                compose.onAllNodes(androidx.compose.ui.test.hasTestTag("trim_end")).onFirst().performTouchInput {
+                    // A slow, slightly wobbly drag, like a finger.
+                    down(center)
+                    for (k in 1..12) moveBy(Offset(-15f, if (k % 2 == 0) 2f else -2f), 16)
+                    up()
+                }
+                pause(1500)
+                val after = timeText().substringAfter(" / ")
+                T.log("trim total before=$before after=$after")
+                check(before != after) { "Dragging the trim handle did not change the length ($before -> $after)" }
+                tapIcon("Undo")
+                pause(800)
+            }
             for (tool in listOf("Speed", "Volume", "Animation", "Filters", "Adjust", "Effects", "Transform", "Opacity", "Mask", "Chroma key", "Voice FX", "Transition")) {
                 s.step("clip_$tool") {
                     tap(tool)

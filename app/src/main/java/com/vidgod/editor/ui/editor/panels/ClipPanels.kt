@@ -195,14 +195,15 @@ fun VolumePanel(vm: EditorViewModel, p: Project, s: Selection?, close: () -> Uni
     var v by remember(s?.id) { mutableFloatStateOf(volume) }
     var fi by remember(s?.id) { mutableFloatStateOf(fadeIn / 1e6f) }
     var fo by remember(s?.id) { mutableFloatStateOf(fadeOut / 1e6f) }
-    fun commit(live: Boolean) {
-        if (clip != null) vm.editVisual(clip.id, record = !live) { it.copy(volume = v, fadeInUs = (fi * 1e6).toLong(), fadeOutUs = (fo * 1e6).toLong(), muted = if (v > 0f) false else it.muted) }
+    // Only moving the volume slider itself un-mutes a muted clip (fades must not).
+    fun commit(live: Boolean, unmute: Boolean = false) {
+        if (clip != null) vm.editVisual(clip.id, record = !live) { it.copy(volume = v, fadeInUs = (fi * 1e6).toLong(), fadeOutUs = (fo * 1e6).toLong(), muted = if (unmute && v > 0f) false else it.muted) }
         else vm.editAudio(audio!!.id, record = !live) { it.copy(volume = v, fadeInUs = (fi * 1e6).toLong(), fadeOutUs = (fo * 1e6).toLong()) }
     }
     Column(Modifier.verticalScroll(rememberScrollState())) {
         PanelHeader("Volume", close, onApplyAll = if (clip != null && s is Selection.Main) ({ vm.editAllMain { it.copy(volume = v) } }) else null)
-        LabeledSlider("Volume", v, { v = it; if (clip != null) commit(true) }, range = 0f..2f, valueText = { "${(it * 100).roundToInt()}%" },
-            onStart = { vm.beginGesture() }, onEnd = { commit(false); vm.endGesture() })
+        LabeledSlider("Volume", v, { v = it; if (clip != null) commit(true, unmute = true) }, range = 0f..2f, valueText = { "${(it * 100).roundToInt()}%" },
+            onStart = { vm.beginGesture() }, onEnd = { commit(false, unmute = true); vm.endGesture() })
         LabeledSlider("Fade in", fi, { fi = it; if (clip != null) commit(true) }, range = 0f..5f, valueText = { "%.1fs".format(it) },
             onStart = { vm.beginGesture() }, onEnd = { commit(false); vm.endGesture() })
         LabeledSlider("Fade out", fo, { fo = it; if (clip != null) commit(true) }, range = 0f..5f, valueText = { "%.1fs".format(it) },

@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -178,7 +179,8 @@ fun EditorScreen(projectId: String, initialAction: String?, onBack: () -> Unit) 
     }
 
     Box(Modifier.fillMaxSize().background(VG.Bg)) {
-        Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
+        // imePadding: keep text fields and their Done buttons above the keyboard (edge-to-edge).
+        Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding()) {
             TopBar(
                 project = project,
                 onClose = onBack,

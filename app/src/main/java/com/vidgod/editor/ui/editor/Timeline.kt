@@ -37,6 +37,8 @@ import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
 import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -83,16 +85,35 @@ import com.vidgod.editor.ui.theme.VG
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.roundToInt
 
 /** Scroll/zoom state shared by all timeline rows. */
 class TimelineState {
+    private var zoom by mutableFloatStateOf(90f)
+
+    /**
+     * Highest zoom allowed for the current project: Compose cannot lay out views wider than
+     * about 260k pixels, so very long clips lower it.
+     */
+    var maxPxPerSec = 600f
+
     /** Pixels per second. */
-    var pxPerSec by mutableFloatStateOf(90f)
+    var pxPerSec: Float
+        get() = min(zoom, maxPxPerSec)
+        set(value) {
+            zoom = value.coerceIn(8f, max(8f, maxPxPerSec))
+        }
 
     fun usToPx(us: Long) = us / 1_000_000f * pxPerSec
     fun pxToUs(px: Float) = (px / pxPerSec * 1_000_000f).toLong()
 }
+
+/** Widest item (in pixels) the timeline lays out; see [TimelineState.maxPxPerSec]. */
+private const val MAX_ITEM_PX = 150_000f
+
+/** coerceIn that tolerates an empty range (e.g. sources whose length could not be read). */
+private fun Long.clampSafe(lo: Long, hi: Long): Long = if (hi < lo) lo else coerceIn(lo, hi)
 
 private val ROW_MAIN = 56.dp
 private val ROW_SMALL = 30.dp
@@ -136,49 +157,82 @@ fun Timeline(
             }
         }
 
+        // Longest item decides how far the timeline may zoom in (see TimelineState.maxPxPerSec).
+        val longestUs = remember(project) {
+            maxOf(
+                project.clips.maxOfOrNull { it.durationUs } ?: 0L,
+                project.overlays.maxOfOrNull { it.durationUs } ?: 0L,
+                project.audios.maxOfOrNull { it.durationUs } ?: 0L,
+                project.texts.maxOfOrNull { it.durationUs } ?: 0L,
+                project.stickers.maxOfOrNull { it.durationUs } ?: 0L,
+                project.effects.maxOfOrNull { it.durationUs } ?: 0L,
+                project.filters.maxOfOrNull { it.durationUs } ?: 0L,
+                1_000_000L,
+            )
+        }
+        state.maxPxPerSec = (MAX_ITEM_PX / (longestUs / 1e6f)).coerceIn(8f, 600f)
+
         val gestureModifier = Modifier.pointerInput(Unit) {
             awaitEachGesture {
                 val down = awaitFirstDown(requireUnconsumed = false)
                 scope.launch { fling.stop() }
-                vm.preview.pause()
-                vm.preview.setScrubbing(true)
-                val tracker = VelocityTracker()
+                val slop = viewConfiguration.touchSlop
+                // 0 = undecided, 1 = scrubbing, 2 = pinch zoom. Until the finger has moved
+                // horizontally past the touch slop, children (taps, trim handles, long-press moves,
+                // the lanes' vertical scroll) get the gesture.
+                var mode = 0
+                var accX = 0f
+                var accY = 0f
                 var pos = position.value
-                var moved = false
+                val tracker = VelocityTracker()
                 tracker.addPosition(down.uptimeMillis, down.position)
                 while (true) {
                     val event = awaitPointerEvent()
                     val pressed = event.changes.filter { it.pressed }
                     if (pressed.isEmpty()) break
-                    if (pressed.size >= 2) {
+                    if (pressed.size >= 2 && mode != 1) {
+                        if (mode == 0 && event.changes.any { it.isConsumed }) break
+                        mode = 2
                         val zoom = event.calculateZoom()
-                        if (zoom != 1f) state.pxPerSec = (state.pxPerSec * zoom).coerceIn(8f, 600f)
+                        if (zoom != 1f) state.pxPerSec = state.pxPerSec * zoom
                         event.changes.forEach { if (it.positionChange() != Offset.Zero) it.consume() }
-                        moved = true
-                    } else {
-                        val ch = pressed.first()
-                        if (ch.isConsumed) continue
-                        val dx = ch.positionChange().x
-                        if (dx != 0f) {
-                            moved = true
-                            pos = (pos - state.pxToUs(dx)).coerceIn(0, currentDuration)
-                            vm.preview.seekTo(pos)
-                            tracker.addPosition(ch.uptimeMillis, ch.position)
-                            ch.consume()
-                        }
+                        continue
+                    }
+                    if (mode == 2) continue
+                    val ch = pressed.firstOrNull { it.id == down.id } ?: pressed.first()
+                    if (mode == 0) {
+                        if (ch.isConsumed) break
+                        val d = ch.positionChange()
+                        accX += d.x
+                        accY += d.y
+                        if (abs(accY) > slop && abs(accY) > abs(accX)) break
+                        if (abs(accX) <= slop) continue
+                        mode = 1
+                        vm.preview.pause()
+                        vm.preview.setScrubbing(true)
+                    }
+                    if (ch.isConsumed) continue
+                    val dx = ch.positionChange().x
+                    if (dx != 0f) {
+                        pos = (pos - state.pxToUs(dx)).coerceIn(0, currentDuration)
+                        vm.preview.seekTo(pos)
+                        tracker.addPosition(ch.uptimeMillis, ch.position)
+                        ch.consume()
                     }
                 }
-                vm.preview.setScrubbing(false)
-                val v = tracker.calculateVelocity().x
-                if (moved && abs(v) > 300f) {
-                    scope.launch {
-                        fling.snapTo(0f)
-                        var last = 0f
-                        fling.animateDecay(-v, exponentialDecay(frictionMultiplier = 1.6f)) {
-                            val delta = value - last
-                            last = value
-                            pos = (pos + state.pxToUs(delta)).coerceIn(0, currentDuration)
-                            vm.preview.seekTo(pos)
+                if (mode == 1) {
+                    vm.preview.setScrubbing(false)
+                    val v = tracker.calculateVelocity().x
+                    if (abs(v) > 300f) {
+                        scope.launch {
+                            fling.snapTo(0f)
+                            var last = 0f
+                            fling.animateDecay(-v, exponentialDecay(frictionMultiplier = 1.6f)) {
+                                val delta = value - last
+                                last = value
+                                pos = (pos + state.pxToUs(delta)).coerceIn(0, currentDuration)
+                                vm.preview.seekTo(pos)
+                            }
                         }
                     }
                 }
@@ -192,8 +246,10 @@ fun Timeline(
                     project.overlays.map { it.layer }.distinct().sortedDescending().forEach { layer ->
                         Lane(ROW_OVERLAY) {
                             project.overlays.filter { it.layer == layer && it.startUs <= window.last && it.endUs >= window.first }.forEach { c ->
-                                TimedItem(vm, state, geo, Selection.Overlay(c.id), selection, c.startUs, c.durationUs, VG.TrackOverlay, ROW_OVERLAY) {
-                                    FilmStrip(c, c.startUs, ROW_OVERLAY, state, window)
+                                key(c.id) {
+                                    TimedItem(vm, state, geo, Selection.Overlay(c.id), selection, c.startUs, c.durationUs, VG.TrackOverlay, ROW_OVERLAY) {
+                                        FilmStrip(c, c.startUs, ROW_OVERLAY, state, window)
+                                    }
                                 }
                             }
                         }
@@ -201,9 +257,11 @@ fun Timeline(
                     project.texts.map { it.lane }.distinct().sorted().forEach { lane ->
                         Lane(ROW_SMALL) {
                             project.texts.filter { it.lane == lane && it.startUs <= window.last && it.endUs >= window.first }.forEach { t ->
-                                TimedItem(vm, state, geo, Selection.Text(t.id), selection, t.startUs, t.durationUs,
-                                    if (t.isCaption) Color(0xFFD9822B) else VG.TrackText, ROW_SMALL) {
-                                    ItemLabel(if (t.isCaption) "CC  ${t.text}" else "T  ${t.text}")
+                                key(t.id) {
+                                    TimedItem(vm, state, geo, Selection.Text(t.id), selection, t.startUs, t.durationUs,
+                                        if (t.isCaption) Color(0xFFD9822B) else VG.TrackText, ROW_SMALL) {
+                                        ItemLabel(if (t.isCaption) "CC  ${t.text}" else "T  ${t.text}")
+                                    }
                                 }
                             }
                         }
@@ -211,8 +269,10 @@ fun Timeline(
                     project.stickers.map { it.lane }.distinct().sorted().forEach { lane ->
                         Lane(ROW_SMALL) {
                             project.stickers.filter { it.lane == lane && it.startUs <= window.last && it.endUs >= window.first }.forEach { s ->
-                                TimedItem(vm, state, geo, Selection.Sticker(s.id), selection, s.startUs, s.durationUs, VG.TrackSticker, ROW_SMALL) {
-                                    ItemLabel(if (s.kind == StickerKind.EMOJI) s.content else "Sticker")
+                                key(s.id) {
+                                    TimedItem(vm, state, geo, Selection.Sticker(s.id), selection, s.startUs, s.durationUs, VG.TrackSticker, ROW_SMALL) {
+                                        ItemLabel(if (s.kind == StickerKind.EMOJI) s.content else "Sticker")
+                                    }
                                 }
                             }
                         }
@@ -220,8 +280,10 @@ fun Timeline(
                     project.effects.map { it.lane }.distinct().sorted().forEach { lane ->
                         Lane(ROW_SMALL) {
                             project.effects.filter { it.lane == lane && it.startUs <= window.last && it.endUs >= window.first }.forEach { e ->
-                                TimedItem(vm, state, geo, Selection.Effect(e.id), selection, e.startUs, e.durationUs, VG.TrackEffect, ROW_SMALL) {
-                                    ItemLabel("✦ " + (Effects.get(e.fx.id)?.name ?: e.fx.id))
+                                key(e.id) {
+                                    TimedItem(vm, state, geo, Selection.Effect(e.id), selection, e.startUs, e.durationUs, VG.TrackEffect, ROW_SMALL) {
+                                        ItemLabel("✦ " + (Effects.get(e.fx.id)?.name ?: e.fx.id))
+                                    }
                                 }
                             }
                         }
@@ -229,8 +291,10 @@ fun Timeline(
                     project.filters.map { it.lane }.distinct().sorted().forEach { lane ->
                         Lane(ROW_SMALL) {
                             project.filters.filter { it.lane == lane && it.startUs <= window.last && it.endUs >= window.first }.forEach { f ->
-                                TimedItem(vm, state, geo, Selection.Filter(f.id), selection, f.startUs, f.durationUs, VG.TrackFilter, ROW_SMALL) {
-                                    ItemLabel("◐ " + (Filters.get(f.filter?.id)?.name ?: "Adjust"))
+                                key(f.id) {
+                                    TimedItem(vm, state, geo, Selection.Filter(f.id), selection, f.startUs, f.durationUs, VG.TrackFilter, ROW_SMALL) {
+                                        ItemLabel("◐ " + (Filters.get(f.filter?.id)?.name ?: "Adjust"))
+                                    }
                                 }
                             }
                         }
@@ -239,9 +303,11 @@ fun Timeline(
                     project.audios.map { it.lane }.distinct().sorted().forEach { lane ->
                         Lane(ROW_AUDIO) {
                             project.audios.filter { it.lane == lane && it.startUs <= window.last && it.endUs >= window.first }.forEach { a ->
-                                TimedItem(vm, state, geo, Selection.Audio(a.id), selection, a.startUs, a.durationUs, VG.TrackAudio, ROW_AUDIO) {
-                                    Waveform(a, state)
-                                    ItemLabel("♪ " + a.name, Modifier.align(Alignment.TopStart))
+                                key(a.id) {
+                                    TimedItem(vm, state, geo, Selection.Audio(a.id), selection, a.startUs, a.durationUs, VG.TrackAudio, ROW_AUDIO) {
+                                        Waveform(a, state)
+                                        ItemLabel("♪ " + a.name, Modifier.align(Alignment.TopStart))
+                                    }
                                 }
                             }
                         }
@@ -389,6 +455,7 @@ private fun TrimHandle(
             .offset { IntOffset(xLeft().roundToInt(), 0) }
             .width(HANDLE_W)
             .height(height)
+            .testTag(if (left) "trim_start" else "trim_end")
             .clip(
                 RoundedCornerShape(
                     topStart = if (left) 6.dp else 0.dp, bottomStart = if (left) 6.dp else 0.dp,
@@ -414,33 +481,33 @@ private fun TrimHandle(
 
 private fun trimLeft(p: Project, sel: Selection, dUs: Long): Project = when (sel) {
     is Selection.Overlay -> ProjectOps.updateVisual(p, sel.id) { c ->
-        val newStart = (c.startUs + dUs).coerceIn(0, c.endUs - ProjectOps.MIN_DURATION_US)
+        val newStart = (c.startUs + dUs).clampSafe(0, c.endUs - ProjectOps.MIN_DURATION_US)
         val realD = newStart - c.startUs
         if (c.isImage) c.copy(startUs = newStart, trimEndUs = (c.trimEndUs - realD).coerceAtLeast(ProjectOps.MIN_DURATION_US))
         else {
-            val srcStart = (c.trimStartUs + (realD * c.speed).toLong()).coerceIn(0, c.trimEndUs - ProjectOps.MIN_DURATION_US)
+            val srcStart = (c.trimStartUs + (realD * c.speed).toLong()).clampSafe(0, c.trimEndUs - ProjectOps.MIN_DURATION_US)
             c.copy(startUs = c.startUs + ((srcStart - c.trimStartUs) / c.speed).toLong(), trimStartUs = srcStart)
         }
     }
     is Selection.Audio -> ProjectOps.updateAudio(p, sel.id) { a ->
-        val srcStart = (a.trimStartUs + (dUs * a.speed).toLong()).coerceIn(0, a.trimEndUs - ProjectOps.MIN_DURATION_US)
+        val srcStart = (a.trimStartUs + (dUs * a.speed).toLong()).clampSafe(0, a.trimEndUs - ProjectOps.MIN_DURATION_US)
         val realD = ((srcStart - a.trimStartUs) / a.speed).toLong()
         a.copy(trimStartUs = srcStart, startUs = (a.startUs + realD).coerceAtLeast(0))
     }
     is Selection.Text -> ProjectOps.updateText(p, sel.id) { t ->
-        val ns = (t.startUs + dUs).coerceIn(0, t.endUs - ProjectOps.MIN_DURATION_US)
+        val ns = (t.startUs + dUs).clampSafe(0, t.endUs - ProjectOps.MIN_DURATION_US)
         t.copy(startUs = ns, durationUs = t.endUs - ns)
     }
     is Selection.Sticker -> ProjectOps.updateSticker(p, sel.id) { t ->
-        val ns = (t.startUs + dUs).coerceIn(0, t.endUs - ProjectOps.MIN_DURATION_US)
+        val ns = (t.startUs + dUs).clampSafe(0, t.endUs - ProjectOps.MIN_DURATION_US)
         t.copy(startUs = ns, durationUs = t.endUs - ns)
     }
     is Selection.Effect -> ProjectOps.updateEffect(p, sel.id) { t ->
-        val ns = (t.startUs + dUs).coerceIn(0, t.endUs - ProjectOps.MIN_DURATION_US)
+        val ns = (t.startUs + dUs).clampSafe(0, t.endUs - ProjectOps.MIN_DURATION_US)
         t.copy(startUs = ns, durationUs = t.endUs - ns)
     }
     is Selection.Filter -> ProjectOps.updateFilter(p, sel.id) { t ->
-        val ns = (t.startUs + dUs).coerceIn(0, t.endUs - ProjectOps.MIN_DURATION_US)
+        val ns = (t.startUs + dUs).clampSafe(0, t.endUs - ProjectOps.MIN_DURATION_US)
         t.copy(startUs = ns, durationUs = t.endUs - ns)
     }
     is Selection.Main -> p
@@ -449,10 +516,10 @@ private fun trimLeft(p: Project, sel: Selection, dUs: Long): Project = when (sel
 private fun trimRight(p: Project, sel: Selection, dUs: Long): Project = when (sel) {
     is Selection.Overlay -> ProjectOps.updateVisual(p, sel.id) { c ->
         if (c.isImage) c.copy(trimEndUs = (c.trimEndUs + dUs).coerceAtLeast(ProjectOps.MIN_DURATION_US))
-        else c.copy(trimEndUs = (c.trimEndUs + (dUs * c.speed).toLong()).coerceIn(c.trimStartUs + ProjectOps.MIN_DURATION_US, c.source.durationUs))
+        else c.copy(trimEndUs = (c.trimEndUs + (dUs * c.speed).toLong()).clampSafe(c.trimStartUs + ProjectOps.MIN_DURATION_US, c.source.durationUs))
     }
     is Selection.Audio -> ProjectOps.updateAudio(p, sel.id) { a ->
-        a.copy(trimEndUs = (a.trimEndUs + (dUs * a.speed).toLong()).coerceIn(a.trimStartUs + ProjectOps.MIN_DURATION_US, a.source.durationUs))
+        a.copy(trimEndUs = (a.trimEndUs + (dUs * a.speed).toLong()).clampSafe(a.trimStartUs + ProjectOps.MIN_DURATION_US, a.source.durationUs))
     }
     is Selection.Text -> ProjectOps.updateText(p, sel.id) { it.copy(durationUs = (it.durationUs + dUs).coerceAtLeast(ProjectOps.MIN_DURATION_US)) }
     is Selection.Sticker -> ProjectOps.updateSticker(p, sel.id) { it.copy(durationUs = (it.durationUs + dUs).coerceAtLeast(ProjectOps.MIN_DURATION_US)) }
@@ -491,7 +558,7 @@ private fun MainTrack(
                 Text(if (project.mainMuted) "Unmute" else "Mute", fontSize = 9.sp, color = VG.TextDim)
             }
         }
-        project.clips.forEachIndexed { i, clip ->
+        project.clips.forEachIndexed { i, clip -> key(clip.id) {
             val start = starts[i]
             val end = start + clip.durationUs
             if (start <= window.last && end >= window.first) {
@@ -547,7 +614,7 @@ private fun MainTrack(
                     Icon(Icons.Default.SwapHoriz, "Transition", tint = Color.Black, modifier = Modifier.size(15.dp))
                 }
             }
-        }
+        } }
         val mainEnd = project.mainDurationUs
         Box(
             Modifier.offset { IntOffset((geo.x(mainEnd) + 12.dp.toPx()).roundToInt(), 8.dp.toPx().roundToInt()) }
@@ -614,7 +681,7 @@ private fun BoxScope.FilmStrip(clip: VisualClip, clipStartUs: Long, height: Dp, 
     val thumbUs = state.pxToUs(thumbW).coerceAtLeast(1)
     val first = ((window.first - clipStartUs) / thumbUs).toInt().coerceIn(0, count - 1)
     val last = ((window.last - clipStartUs) / thumbUs).toInt().coerceIn(0, count - 1)
-    for (i in first..last) {
+    for (i in first..last) key(i) {
         val offsetUs = (thumbUs * i + thumbUs / 2).coerceAtMost(clip.durationUs)
         val srcUs = if (clip.isImage) 0 else clip.timelineToSourceUs(offsetUs)
         Thumb(
@@ -627,8 +694,9 @@ private fun BoxScope.FilmStrip(clip: VisualClip, clipStartUs: Long, height: Dp, 
 @Composable
 private fun Thumb(context: Context, uri: String, timeUs: Long, isImage: Boolean, modifier: Modifier) {
     val bucket = if (isImage) 0 else timeUs / 250_000 * 250_000
-    val bmp by produceState(Thumbnails.cached(uri, bucket, 160), uri, bucket) {
-        if (value == null) value = Thumbnails.get(context, uri, bucket, 160, isImage)
+    var bmp by remember(uri, bucket) { mutableStateOf(Thumbnails.cached(uri, bucket, 160)) }
+    LaunchedEffect(uri, bucket) {
+        if (bmp == null) bmp = Thumbnails.get(context, uri, bucket, 160, isImage)
     }
     Box(modifier.background(VG.Surface3)) {
         bmp?.let { Image(it.asImageBitmap(), null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize()) }

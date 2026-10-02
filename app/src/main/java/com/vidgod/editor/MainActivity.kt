@@ -73,14 +73,19 @@ private fun AppNav(sharedProject: MutableStateFlow<String?>) {
     LaunchedEffect(Unit) {
         sharedProject.collect { id ->
             if (id != null) {
-                nav.navigate("editor/$id?action=")
+                nav.navigate("editor/$id?action=") { launchSingleTop = true }
                 sharedProject.value = null
             }
         }
     }
     NavHost(nav, startDestination = "home", modifier = Modifier.fillMaxSize().background(VG.Bg)) {
         composable("home") {
-            HomeScreen(openEditor = { id, action -> nav.navigate("editor/$id?action=${action.orEmpty()}") })
+            HomeScreen(openEditor = { id, action ->
+                // Ignore a second tap while the first navigation is running.
+                if (nav.currentDestination?.route == "home") {
+                    nav.navigate("editor/$id?action=${action.orEmpty()}") { launchSingleTop = true }
+                }
+            })
         }
         composable(
             "editor/{id}?action={action}",
@@ -91,7 +96,8 @@ private fun AppNav(sharedProject: MutableStateFlow<String?>) {
         ) { entry ->
             val id = entry.arguments?.getString("id").orEmpty()
             val action = entry.arguments?.getString("action")?.ifBlank { null }
-            EditorScreen(id, action, onBack = { nav.popBackStack() })
+            // Only pop while this editor is on top, so a double tap on Close cannot pop Home too.
+            EditorScreen(id, action, onBack = { if (nav.currentBackStackEntry == entry) nav.popBackStack() })
         }
     }
 }

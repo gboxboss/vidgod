@@ -20,6 +20,8 @@ data class ProjectSummary(
     val durationUs: Long,
     val coverFile: File?,
     val clipCount: Int,
+    /** Last change of the cover image, so the home screen reloads it. */
+    val coverStamp: Long = 0,
 )
 
 /** Stores each project as JSON under `files/projects/<id>/project.json`. */
@@ -43,21 +45,26 @@ class ProjectRepository(private val context: Context) {
     fun mediaDir(id: String) = File(dir(id), "media").apply { mkdirs() }
 
     suspend fun refresh() = withContext(Dispatchers.IO) {
-        val list = root.listFiles()?.mapNotNull { d ->
+        val list = root.listFiles()?.filter { it.isDirectory && !it.name.startsWith(".") }?.mapNotNull { d ->
             val f = File(d, "project.json")
             if (!f.exists()) return@mapNotNull null
             runCatching {
                 val p = json.decodeFromString(Project.serializer(), f.readText())
+                // The folder name is the project's identity (a half-finished copy may still
+                // contain another project's file).
+                if (p.id != d.name) return@runCatching null
+                val cover = coverFile(p.id).takeIf { it.exists() }
                 ProjectSummary(
                     id = p.id,
                     name = p.name,
                     updatedAt = p.updatedAt,
                     durationUs = p.durationUs,
-                    coverFile = coverFile(p.id).takeIf { it.exists() },
+                    coverFile = cover,
                     clipCount = p.clips.size,
+                    coverStamp = cover?.lastModified() ?: 0,
                 )
             }.getOrNull()
-        }.orEmpty().sortedByDescending { it.updatedAt }
+        }.orEmpty().distinctBy { it.id }.sortedByDescending { it.updatedAt }
         _projects.value = list
     }
 
@@ -78,11 +85,14 @@ class ProjectRepository(private val context: Context) {
         }
     }
 
-    suspend fun saveCover(id: String, bitmap: Bitmap) = withContext(Dispatchers.IO) {
-        runCatching {
-            dir(id).mkdirs()
-            coverFile(id).outputStream().use { bitmap.compress(Bitmap.CompressFormat.JPEG, 85, it) }
+    suspend fun saveCover(id: String, bitmap: Bitmap) {
+        withContext(Dispatchers.IO) {
+            runCatching {
+                dir(id).mkdirs()
+                coverFile(id).outputStream().use { bitmap.compress(Bitmap.CompressFormat.JPEG, 85, it) }
+            }
         }
+        refresh()
     }
 
     suspend fun create(name: String): Project {
@@ -106,8 +116,19 @@ class ProjectRepository(private val context: Context) {
     suspend fun duplicate(id: String) = withContext(Dispatchers.IO) {
         val p = load(id) ?: return@withContext
         val copy = p.copy(id = newId(), name = p.name + " copy", updatedAt = System.currentTimeMillis())
-        dir(id).copyRecursively(dir(copy.id), overwrite = true)
-        save(copy)
+        // Build the copy in a hidden folder and rename it when complete, so that the project
+        // list never sees a half-copied project.
+        val tmp = File(root, ".copy_${copy.id}")
+        tmp.deleteRecursively()
+        dir(id).copyRecursively(tmp, overwrite = true)
+        File(tmp, "project.json.tmp").delete()
+        // Generated media (recordings, freeze frames, reversed clips…) now lives in the copy.
+        val text = json.encodeToString(Project.serializer(), copy).replace("projects/$id/", "projects/${copy.id}/")
+        File(tmp, "project.json").writeText(text)
+        if (!tmp.renameTo(dir(copy.id))) {
+            tmp.copyRecursively(dir(copy.id), overwrite = true)
+            tmp.deleteRecursively()
+        }
         refresh()
     }
 }
