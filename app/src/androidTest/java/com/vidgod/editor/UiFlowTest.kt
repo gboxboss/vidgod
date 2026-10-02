@@ -202,7 +202,9 @@ class UiFlowTest {
                 Thread.sleep(2500)
                 // Back to the app (through the shell, which may start activities from the background).
                 device.executeShellCommand("am start -n ${T.app.packageName}/${MainActivity::class.java.name}")
-                check(device.wait(Until.hasObject(By.desc("Play")), 10_000)) { "Still playing after the app went to the background" }
+                // (Compose waits: the test clock must advance for the UI to show the new state.)
+                val paused = runCatching { compose.waitUntil(10_000) { compose.exists(hasContentDescription("Play")) } }.isSuccess
+                check(paused) { "Still playing after the app went to the background" }
                 pause(1000)
                 val t1 = timeText()
                 Thread.sleep(1500)
