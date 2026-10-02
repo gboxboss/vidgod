@@ -6,7 +6,9 @@ plugins {
 
 android {
     namespace = "com.vidgod.editor"
-    compileSdk = 36
+    compileSdk = 37
+    compileSdkMinor = 1
+    buildToolsVersion = "37.0.0"
 
     defaultConfig {
         applicationId = "com.vidgod.editor"
