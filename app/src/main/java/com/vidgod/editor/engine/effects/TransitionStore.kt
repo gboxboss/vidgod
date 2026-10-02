@@ -3,21 +3,34 @@ package com.vidgod.editor.engine.effects
 import android.opengl.EGL14
 import android.opengl.EGLContext
 import android.opengl.GLES20
+import android.util.Log
 import com.vidgod.editor.engine.gl.Fbo
 
 /**
- * Keeps a copy of the last rendered frame of a main-track clip so that the next clip can blend
- * with it (cross-fades, pushes, ...). Media3 sequences cannot overlap clips, so transitions are
- * rendered by the incoming clip using this frozen frame of the outgoing one.
+ * Keeps the last rendered frame of a main-track clip so that the next clip can blend with it
+ * (cross-fades, pushes, ...). Media3 sequences cannot overlap clips, so transitions are rendered
+ * by the incoming clip using this frozen frame of the outgoing one.
+ *
+ * Textures belong to an EGL context, so frames are kept per context, in two slots: a short clip
+ * can receive a transition (reading the previous clip's slot) while it already stores its own
+ * last frames for the next transition (writing the other slot).
  */
 object TransitionStore {
-    private class Entry(val context: EGLContext) {
-        var fbo: Fbo? = null
+    private const val TAG = "TransitionStore"
+
+    private class Slot {
         var clipId: String? = null
+        var fbo: Fbo? = null
+    }
+
+    private class Entry(val context: EGLContext) {
+        val slots = arrayOf(Slot(), Slot())
+        var next = 0
+        val missesLogged = HashSet<String>()
     }
 
     private val entries = ArrayList<Entry>()
-    private var blackTex = HashMap<EGLContext, Int>()
+    private val blackTex = HashMap<EGLContext, Int>()
 
     @Synchronized
     private fun entry(): Entry {
@@ -27,28 +40,41 @@ object TransitionStore {
         return Entry(ctx).also { entries.add(it) }
     }
 
-    /** Copies the currently bound framebuffer (size [w]x[h]) as the last frame of [clipId]. */
-    fun store(clipId: String, w: Int, h: Int) {
+    /**
+     * Framebuffer that receives the current frame of [clipId] (the caller renders into it and
+     * then copies it to its output). Never the slot that holds another clip's frame needed now.
+     */
+    @Synchronized
+    fun targetFor(clipId: String, w: Int, h: Int): Fbo {
         val e = entry()
-        var f = e.fbo
+        var slot = e.slots.firstOrNull { it.clipId == clipId }
+        if (slot == null) {
+            slot = e.slots[e.next]
+            e.next = (e.next + 1) % e.slots.size
+            Log.d(TAG, "storing frames of $clipId (${w}x$h) in context ${e.context.nativeHandle}")
+        }
+        var f = slot.fbo
         if (f == null || f.width != w || f.height != h) {
-            val previousFbo = Fbo.current()
+            val previous = Fbo.current()
             f?.release()
             f = Fbo(w, h)
-            e.fbo = f
-            GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, previousFbo)
+            slot.fbo = f
+            GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, previous)
         }
-        GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
-        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, f.texId)
-        GLES20.glCopyTexSubImage2D(GLES20.GL_TEXTURE_2D, 0, 0, 0, 0, 0, w, h)
-        e.clipId = clipId
+        slot.clipId = clipId
+        return f
     }
 
     /** Texture holding the last frame of [clipId], or null if not available. */
+    @Synchronized
     fun textureFor(clipId: String?): Int? {
         if (clipId == null) return null
         val e = entry()
-        return if (e.clipId == clipId) e.fbo?.texId else null
+        val tex = e.slots.firstOrNull { it.clipId == clipId }?.fbo?.texId
+        if (tex == null && e.missesLogged.add(clipId)) {
+            Log.w(TAG, "no stored frame for $clipId in context ${e.context.nativeHandle}; have ${e.slots.map { it.clipId }}")
+        }
+        return tex
     }
 
     /** A 1x1 opaque black texture for the current context. */

@@ -216,6 +216,21 @@ class ExportTest {
         export("export_cutouts", p)
     }
 
+    /** A dissolve blends the previous clip's last frame (not black) into the next clip. */
+    @Test
+    fun transitionBlendsFromPreviousClip() {
+        val a = ProjectOps.visualFrom(T.source("photo.jpg")).copy(trimEndUs = 1_000_000, transitionOut = TransitionRef("dissolve", 600_000))
+        val b = ProjectOps.visualFrom(T.source("portrait.mp4")).copy(trimEndUs = 1_200_000)
+        val p = Project(clips = listOf(a, b))
+        val (file, _) = export("export_dissolve", p, ExportSettings(resolution = 480))
+        val total = p.durationUs.toFloat()
+        val frames = Inspect.frames(file, listOf(0.5e6f / total, 1.3e6f / total, 2.0e6f / total))
+        val lumas = frames.map { (_, f) -> Inspect.stats(f!!).first }
+        T.log("dissolve lumas A=%.1f mid=%.1f B=%.1f".format(lumas[0], lumas[1], lumas[2]))
+        Inspect.sheet("export_dissolve_frames", frames.map { (t, f) -> "%.2fs".format(t / 1e6) to f })
+        assertTrue("mid-dissolve frame is too dark (from frame missing?): $lumas", lumas[1] > 0.75 * minOf(lumas[0], lumas[2]))
+    }
+
     /** Every effect of the catalog compiles and draws on a real GPU driver. */
     @Test
     fun allEffectsRender() {

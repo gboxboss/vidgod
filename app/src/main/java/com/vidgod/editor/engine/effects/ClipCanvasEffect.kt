@@ -75,6 +75,7 @@ private class ClipCanvasProgram(
     private var blurH: Shader? = null
     private var transition: Shader? = null
     private var transitionId: String? = null
+    private var copyOut: Shader? = null
 
     private val blurA = FboHolder()
     private val blurB = FboHolder()
@@ -158,12 +159,19 @@ private class ClipCanvasProgram(
             val blurTex = if (anim.blur > 0.01f) computeBlur(inputTexId, 0.6f, null, blurA, blurB) else inputTexId
             val bgTex = if (bgMode == 3f) ensureBgImage(canvas.backgroundImageUri!!) else 0
 
+            // ---- where this frame goes ----
+            // Near the end of a clip that has a transition, the frame is rendered into the
+            // TransitionStore (the next clip blends from it) and then copied to the output.
+            val storeFrame = spec.transitionOutUs > 0 && duration - local <= spec.transitionOutUs + 300_000
+            val stored = if (storeFrame) TransitionStore.targetFor(spec.clipId, outW, outH) else null
+            fun bindDest() = if (stored != null) stored.bind() else Fbo.bindTarget(outFbo, outW, outH)
+
             // ---- transition into this clip ----
             val tr = spec.transitionIn
             val trDef = tr?.let { Transitions.get(it.id) }
             val trActive = trDef != null && local < tr!!.durationUs
             val target = if (trActive) temp.get(outW, outH).also { it.bind() } else null
-            if (target == null) Fbo.bindTarget(outFbo, outW, outH)
+            if (target == null) bindDest()
             if (target != null) {
                 GLES20.glClearColor(0f, 0f, 0f, 0f)
                 GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
@@ -212,7 +220,7 @@ private class ClipCanvasProgram(
 
             if (target != null) {
                 val tsh = transitionShader(trDef!!.id, trDef.glsl)
-                Fbo.bindTarget(outFbo, outW, outH)
+                bindDest()
                 tsh.use()
                 val from = TransitionStore.textureFor(spec.prevClipId) ?: TransitionStore.black()
                 tsh.texture("uFrom", 0, from)
@@ -222,9 +230,13 @@ private class ClipCanvasProgram(
                 tsh.draw()
             }
 
-            if (spec.transitionOutUs > 0 && duration - local <= spec.transitionOutUs + 300_000) {
+            if (stored != null) {
+                // Copy the stored frame to the output.
                 Fbo.bindTarget(outFbo, outW, outH)
-                TransitionStore.store(spec.clipId, outW, outH)
+                val c = copyOut ?: Shader(Shader.VERTEX, Shader.COMMON + CanvasShaders.COPY_FS).also { copyOut = it }
+                c.use()
+                c.texture("uTex", 0, stored.texId)
+                c.draw()
             }
             Fbo.bindTarget(outFbo, outW, outH)
         } catch (e: Exception) {
@@ -341,7 +353,7 @@ private class ClipCanvasProgram(
 
     override fun release() {
         super.release()
-        main?.release(); copy?.release(); blurH?.release(); transition?.release()
+        main?.release(); copy?.release(); blurH?.release(); transition?.release(); copyOut?.release()
         blurA.release(); blurB.release(); bgBlurA.release(); bgBlurB.release(); temp.release()
         if (bgImageTex != 0) GLES20.glDeleteTextures(1, intArrayOf(bgImageTex), 0)
     }
@@ -364,6 +376,10 @@ for (int y = -1; y <= 1; y++) {
   }
   gl_FragColor = acc / 9.0;
 }
+"""
+    const val COPY_FS = """
+uniform sampler2D uTex;
+void main() { gl_FragColor = texture2D(uTex, vUv); }
 """
     const val BLUR_FS = """
 uniform sampler2D uTex;
