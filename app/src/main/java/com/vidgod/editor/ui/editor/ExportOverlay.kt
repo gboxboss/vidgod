@@ -70,6 +70,26 @@ fun ExportOverlay(vm: EditorViewModel, project: Project, onClose: () -> Unit) {
     var job by remember { mutableStateOf<Job?>(null) }
     val s = project.export
     fun set(f: (ExportSettings) -> ExportSettings) = vm.update { it.copy(export = f(it.export)) }
+    fun startExport() {
+        job = scope.launch {
+            state = ExportState.Running(0)
+            try {
+                val r = ExportController(context).export(vm.project.value, vm.project.value.export) { p ->
+                    state = ExportState.Running(p)
+                }
+                state = ExportState.Done(r.galleryUri, r.file.absolutePath, r.sizeBytes, r.durationMs)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                state = ExportState.Settings
+                throw e
+            } catch (e: Exception) {
+                state = ExportState.Failed(e.message ?: e.toString())
+            }
+        }
+    }
+    // Android 8/9 need the storage permission to save into the gallery.
+    val storagePermission = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
+    ) { startExport() }
 
     Box(
         Modifier.fillMaxSize().background(VG.Bg).statusBarsPadding().navigationBarsPadding().clickable(enabled = true) {},
@@ -122,20 +142,10 @@ fun ExportOverlay(vm: EditorViewModel, project: Project, onClose: () -> Unit) {
                     }
                     Spacer(Modifier.height(20.dp))
                     BigButton("Export video") {
-                        job = scope.launch {
-                            state = ExportState.Running(0)
-                            try {
-                                val r = ExportController(context).export(vm.project.value, vm.project.value.export) { p ->
-                                    state = ExportState.Running(p)
-                                }
-                                state = ExportState.Done(r.galleryUri, r.file.absolutePath, r.sizeBytes, r.durationMs)
-                            } catch (e: kotlinx.coroutines.CancellationException) {
-                                state = ExportState.Settings
-                                throw e
-                            } catch (e: Exception) {
-                                state = ExportState.Failed(e.message ?: e.toString())
-                            }
-                        }
+                        val needsPermission = android.os.Build.VERSION.SDK_INT < 29 &&
+                            androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.WRITE_EXTERNAL_STORAGE) !=
+                            android.content.pm.PackageManager.PERMISSION_GRANTED
+                        if (needsPermission) storagePermission.launch(android.Manifest.permission.WRITE_EXTERNAL_STORAGE) else startExport()
                     }
                 }
                 is ExportState.Running -> Column(
@@ -155,7 +165,7 @@ fun ExportOverlay(vm: EditorViewModel, project: Project, onClose: () -> Unit) {
                 ) {
                     Icon(Icons.Default.CheckCircle, null, tint = VG.Accent, modifier = Modifier.size(72.dp))
                     Spacer(Modifier.height(12.dp))
-                    Text("Saved to your gallery", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    Text(if (st.uri != null) "Saved to your gallery" else "Export finished", fontSize = 20.sp, fontWeight = FontWeight.Bold)
                     Text(
                         "Movies/VidGod · ${"%.1f".format(st.sizeBytes / 1e6)} MB · ${"%.1f".format(st.ms / 1000f)} s",
                         color = VG.TextDim, fontSize = 13.sp, textAlign = TextAlign.Center,

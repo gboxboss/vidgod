@@ -58,6 +58,10 @@ class EditorViewModel(app: Application, val projectId: String) : AndroidViewMode
     private val _messages = MutableSharedFlow<String>(extraBufferCapacity = 8)
     val messages: SharedFlow<String> = _messages.asSharedFlow()
 
+    /** Clip whose chroma-key colour is being picked from the preview, if any. */
+    private val _eyedropper = MutableStateFlow<String?>(null)
+    val eyedropper: StateFlow<String?> = _eyedropper.asStateFlow()
+
     private val undoStack = ArrayDeque<Project>()
     private val redoStack = ArrayDeque<Project>()
     private val _canUndo = MutableStateFlow(false)
@@ -440,6 +444,45 @@ class EditorViewModel(app: Application, val projectId: String) : AndroidViewMode
         }
     }
 
+    // ---------------------------------------------------------------- eyedropper
+
+    fun startEyedropper(clipId: String) {
+        preview.pause()
+        _eyedropper.value = clipId
+        toast("Tap the colour to remove on the preview")
+    }
+
+    fun cancelEyedropper() {
+        _eyedropper.value = null
+    }
+
+    /** Picks the colour under a tap at canvas fractions (nx, ny) for the chroma key. */
+    fun eyedropAt(nx: Float, ny: Float, cw: Int, ch: Int) {
+        val id = _eyedropper.value ?: return
+        _eyedropper.value = null
+        val p = _project.value
+        val clip = (p.clips + p.overlays).firstOrNull { it.id == id } ?: return
+        val range = ProjectOps.range(p, Selection.Main(id).takeIf { p.clips.any { c -> c.id == id } } ?: Selection.Overlay(id)) ?: return
+        val local = (positionUs - range.first).coerceIn(0, clip.durationUs)
+        val uv = com.vidgod.editor.engine.LayerMath.canvasToSource(clip, local, nx, ny, cw, ch)
+            ?: return toast("Tap inside the clip")
+        viewModelScope.launch {
+            val frame = if (clip.isImage) Thumbnails.loadImage(getApplication(), clip.playbackUri, 512)
+            else Thumbnails.exactFrame(getApplication(), clip.playbackUri, ProjectOps.sourceTimeAt(clip, local), 512)
+            if (frame == null) return@launch toast("Could not read the frame")
+            val x = (uv.first * frame.width).toInt().coerceIn(0, frame.width - 1)
+            val y = (uv.second * frame.height).toInt().coerceIn(0, frame.height - 1)
+            // Average a small neighbourhood for a stable colour.
+            var r = 0; var g = 0; var b = 0; var n = 0
+            for (dy in -2..2) for (dx in -2..2) {
+                val px = frame.getPixel((x + dx).coerceIn(0, frame.width - 1), (y + dy).coerceIn(0, frame.height - 1))
+                r += (px shr 16) and 0xFF; g += (px shr 8) and 0xFF; b += px and 0xFF; n++
+            }
+            val color = (0xFF shl 24) or ((r / n) shl 16) or ((g / n) shl 8) or (b / n)
+            editVisual(id) { it.copy(chromaKey = (it.chromaKey ?: com.vidgod.editor.model.ChromaKey()).copy(color = color)) }
+        }
+    }
+
     // ---------------------------------------------------------------- freeze frame
 
     fun freezeFrame() {
@@ -517,7 +560,7 @@ class EditorViewModel(app: Application, val projectId: String) : AndroidViewMode
 
     companion object {
         val GLOBAL_PANELS = setOf(
-            Panel.AUDIO_MENU, Panel.TEXT_MENU, Panel.STICKERS, Panel.EFFECTS_ADD, Panel.FILTERS_ADD,
+            Panel.AUDIO_MENU, Panel.TEXT_MENU, Panel.STICKERS, Panel.STYLES, Panel.EFFECTS_ADD, Panel.FILTERS_ADD,
             Panel.ADJUST_ADD, Panel.RATIO, Panel.CANVAS, Panel.CAPTIONS, Panel.TTS, Panel.RECORD, Panel.EXPORT, Panel.REORDER,
         )
 

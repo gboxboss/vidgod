@@ -346,6 +346,7 @@ private fun Toolbar(vm: EditorViewModel, project: Project, selection: Selection?
     val tools: List<Tool> = when (selection) {
         null -> listOf(
             Tool(Icons.Default.ContentCut, "Edit") { if (!vm.selectMainAtPlayhead()) actions.pickMain() },
+            Tool(Icons.Default.AutoAwesome, "Styles") { vm.openPanel(Panel.STYLES) },
             Tool(Icons.Default.MusicNote, "Audio") { vm.openPanel(Panel.AUDIO_MENU) },
             Tool(Icons.Default.TextFields, "Text") { vm.openPanel(Panel.TEXT_MENU) },
             Tool(Icons.Default.EmojiEmotions, "Stickers") { vm.openPanel(Panel.STICKERS) },

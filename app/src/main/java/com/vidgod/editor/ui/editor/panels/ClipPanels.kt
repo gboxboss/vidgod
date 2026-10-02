@@ -313,7 +313,14 @@ fun ChromaPanel(vm: EditorViewModel, p: Project, s: Selection?, close: () -> Uni
     val ck = clip.chromaKey
     Column(Modifier.verticalScroll(rememberScrollState())) {
         PanelHeader("Chroma key", close)
-        Text("Pick the background colour to remove", color = VG.TextDim, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 16.dp))
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("Pick the background colour to remove", color = VG.TextDim, fontSize = 12.sp, modifier = Modifier.weight(1f))
+            Text(
+                "🎯 Pick from video", color = Color.Black, fontSize = 12.sp,
+                modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(VG.Accent).clickable { vm.startEyedropper(clip.id) }
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+            )
+        }
         Row(Modifier.horizontalScroll(rememberScrollState()).padding(12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Box(
                 Modifier.size(40.dp).clip(CircleShape).background(VG.Surface2).border(2.dp, if (ck == null) VG.Accent else Color.Transparent, CircleShape)

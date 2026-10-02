@@ -41,6 +41,8 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -162,10 +164,18 @@ fun TextEditPanel(vm: EditorViewModel, p: Project, s: Selection?, close: () -> U
     fun style(live: Boolean = true, f: (VStyle) -> VStyle) = vm.editText(text.id, record = false) { it.copy(style = f(it.style)) }
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp, top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+            var field by remember(text.id) {
+                mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(text.text, androidx.compose.ui.text.TextRange(0, text.text.length)))
+            }
+            LaunchedEffect(text.id) { if (text.text == "Enter text") runCatching { focus.requestFocus() } }
             OutlinedTextField(
-                value = text.text,
-                onValueChange = { v -> vm.editText(text.id, record = false) { it.copy(text = v, words = emptyList()) } },
-                modifier = Modifier.weight(1f),
+                value = field,
+                onValueChange = { v ->
+                    field = v
+                    if (v.text != text.text) vm.editText(text.id, record = false) { it.copy(text = v.text, words = emptyList()) }
+                },
+                modifier = Modifier.weight(1f).focusRequester(focus),
                 maxLines = 3,
                 textStyle = TextStyle(fontSize = 15.sp, color = VG.Text),
                 colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = VG.Accent, unfocusedBorderColor = VG.Surface3),

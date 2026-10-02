@@ -54,7 +54,7 @@ class CompositionFactory(private val context: Context) {
      * @param shortSide short side of the output canvas in pixels
      * @param frameRate maximum frame rate of the output
      */
-    fun build(project: Project, live: LiveProject, shortSide: Int, frameRate: Int): Built? {
+    fun build(project: Project, live: LiveProject, shortSide: Int, frameRate: Int, forExport: Boolean = false): Built? {
         if (project.clips.isEmpty()) return null
         val (cw, ch) = project.canvasSize(shortSide)
         val total = project.mainDurationUs
@@ -161,6 +161,8 @@ class CompositionFactory(private val context: Context) {
         val builder = Composition.Builder(sequences)
             .setHdrMode(Composition.HDR_MODE_TONE_MAP_HDR_TO_SDR_USING_OPEN_GL)
             .setEffects(Effects(emptyList(), compositionEffects))
+        // Always give exported files an audio track (silent if needed); some apps expect one.
+        if (forExport) builder.experimentalSetForceAudioTrack(true)
         if (videoSequenceCount > 1) {
             builder.setVideoCompositorSettings(compositorSettings(cw, ch, layerRanges))
         }

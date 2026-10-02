@@ -65,7 +65,7 @@ class ExportController(private val context: Context) {
         } else {
             settings
         }
-        val built = CompositionFactory(context).build(project, live, effective.resolution, effective.frameRate)
+        val built = CompositionFactory(context).build(project, live, effective.resolution, effective.frameRate, forExport = true)
             ?: throw IllegalStateException("Nothing to export: add a clip first")
         val dir = File(context.cacheDir, "exports").apply { mkdirs() }
         dir.listFiles()?.forEach { it.delete() }

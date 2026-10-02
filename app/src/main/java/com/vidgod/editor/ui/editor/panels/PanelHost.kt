@@ -45,6 +45,7 @@ fun PanelHost(
         Panel.CAPTIONS -> CaptionsPanel(vm, project, close)
         Panel.TTS -> TtsPanel(vm, project, selection, close)
         Panel.RECORD -> RecordPanel(vm, positionUs, close)
+        Panel.STYLES -> StylesPanel(vm, close)
         Panel.EXPORT -> {}
     }
 }

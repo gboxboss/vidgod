@@ -131,19 +131,26 @@ object Waveforms {
                     pcmFloat = of.containsKey(MediaFormat.KEY_PCM_ENCODING) &&
                         of.getInteger(MediaFormat.KEY_PCM_ENCODING) == android.media.AudioFormat.ENCODING_PCM_FLOAT
                 } else if (outIdx >= 0) {
-                    if (info.size > 0 && info.presentationTimeUs >= startUs - 100_000) {
+                    val bytesPerSample = if (pcmFloat) 4 else 2
+                    val totalFrames = info.size / bytesPerSample / channels
+                    val bufferEndUs = info.presentationTimeUs + totalFrames * 1_000_000L / sampleRate
+                    if (info.size > 0 && bufferEndUs > startUs) {
+                        // Drop the part of the first buffer that lies before startUs.
+                        val skipFrames = if (info.presentationTimeUs < startUs) {
+                            ((startUs - info.presentationTimeUs) * sampleRate / 1_000_000L).toInt().coerceIn(0, totalFrames)
+                        } else 0
                         val buf = codec.getOutputBuffer(outIdx)!!.order(ByteOrder.nativeOrder())
-                        buf.position(info.offset)
+                        buf.position(info.offset + skipFrames * channels * bytesPerSample)
                         buf.limit(info.offset + info.size)
-                        val count = if (pcmFloat) info.size / 4 else info.size / 2
+                        val count = (totalFrames - skipFrames) * channels
                         if (scratch.size < count) scratch = FloatArray(count)
                         if (pcmFloat) {
-                            val fb = buf.asFloatBuffer(); fb.get(scratch, 0, count)
+                            val fb = buf.slice().order(ByteOrder.nativeOrder()).asFloatBuffer(); fb.get(scratch, 0, count)
                         } else {
-                            val sb = buf.asShortBuffer()
+                            val sb = buf.slice().order(ByteOrder.nativeOrder()).asShortBuffer()
                             for (i in 0 until count) scratch[i] = sb.get(i) / 32768f
                         }
-                        onPcm(scratch, count, channels, sampleRate, state)
+                        if (count > 0) onPcm(scratch, count, channels, sampleRate, state)
                     }
                     codec.releaseOutputBuffer(outIdx, false)
                     if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) outputDone = true

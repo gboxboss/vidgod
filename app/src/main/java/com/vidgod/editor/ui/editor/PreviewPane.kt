@@ -10,6 +10,7 @@ import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateRotation
 import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -24,6 +25,8 @@ import androidx.compose.material.icons.filled.OpenInFull
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.collectAsState
+import com.vidgod.editor.ui.theme.VG
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
@@ -89,6 +92,15 @@ fun PreviewPane(
                 modifier = Modifier.fillMaxSize(),
             )
             if (project.clips.isEmpty()) return@Box
+            val eyedropper by vm.eyedropper.collectAsState()
+            if (eyedropper != null) {
+                Box(
+                    Modifier.fillMaxSize().border(2.dp, VG.Accent).pointerInput(Unit) {
+                        detectTapGestures { o -> vm.eyedropAt(o.x / size.width, o.y / size.height, canvasSize.first, canvasSize.second) }
+                    },
+                )
+                return@Box
+            }
             if (selection != null || project.texts.isNotEmpty() || project.stickers.isNotEmpty() || project.overlays.isNotEmpty()) {
                 SelectionLayer(vm, project, selection, position.value, canvasSize)
             }
