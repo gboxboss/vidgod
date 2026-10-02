@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Clapper/film frame with a play triangle in VidGod colours -->
+    <path
+        android:fillColor="#00E1FF"
+        android:pathData="M30,36 L74,36 Q80,36 80,42 L80,70 Q80,76 74,76 L30,76 Q24,76 24,70 L24,42 Q24,36 30,36 Z" />
+    <path
+        android:fillColor="#FF2D6F"
+        android:pathData="M28,30 L76,30 L80,36 L24,36 Z" />
+    <path
+        android:fillColor="#0B0B10"
+        android:pathData="M46,46 L62,56 L46,66 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M34,30 L40,30 L36,36 L30,36 Z M48,30 L54,30 L50,36 L44,36 Z M62,30 L68,30 L64,36 L58,36 Z" />
+</vector>

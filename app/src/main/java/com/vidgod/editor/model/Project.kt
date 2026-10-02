@@ -185,11 +185,11 @@ data class VisualClip(
     val removeBackground: Boolean = false,
     val keyframes: List<Keyframe> = emptyList(),
     val blendMode: BlendMode = BlendMode.NORMAL,
-    /** For reversed clips, the uri of the pre-rendered reversed file. */
-    val reversedUri: String? = null,
-    val isReversed: Boolean = false,
+    /** Set when [source] is a reversed copy; holds the original to undo the reverse. */
+    val reversedFrom: ReverseInfo? = null,
     val label: String? = null,
 ) {
+    val isReversed get() = reversedFrom != null
     val isImage get() = source.kind == MediaKind.IMAGE
     val sourceRangeUs get() = (trimEndUs - trimStartUs).coerceAtLeast(1)
 
@@ -206,8 +206,11 @@ data class VisualClip(
     val endUs get() = startUs + durationUs
 
     /** The uri that should actually be decoded. */
-    val playbackUri get() = if (isReversed && reversedUri != null) reversedUri else source.uri
+    val playbackUri get() = source.uri
 }
+
+@Serializable
+data class ReverseInfo(val source: MediaSource, val trimStartUs: Long, val trimEndUs: Long)
 
 @Serializable
 enum class BlendMode { NORMAL, MULTIPLY, SCREEN, OVERLAY, DARKEN, LIGHTEN, ADD, DIFFERENCE }

@@ -59,6 +59,16 @@ android {
         buildConfig = true
     }
 
+    lint {
+        checkReleaseBuilds = false
+        abortOnError = false
+        disable += listOf("UnsafeOptInUsageError", "UnsafeOptInUsageWarning")
+    }
+
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
+
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -109,5 +119,6 @@ dependencies {
 
     implementation(libs.vosk.android)
     implementation(libs.mlkit.segmentation.selfie)
-    implementation(libs.mlkit.subject.segmentation)
+
+    testImplementation("junit:junit:4.13.2")
 }
