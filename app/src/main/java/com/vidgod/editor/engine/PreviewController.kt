@@ -76,6 +76,10 @@ class PreviewController(private val context: Context) {
             if (isPlaying) handler.post(ticker)
         }
 
+        override fun onRenderedFirstFrame() {
+            Log.d(TAG, "first frame rendered")
+        }
+
         override fun onPlaybackStateChanged(playbackState: Int) {
             if (playbackState == Player.STATE_READY && redrawOnReady) {
                 // Safety net: the first frame of a new player may have gone to a surface that was
@@ -144,13 +148,30 @@ class PreviewController(private val context: Context) {
         player?.setVideoSurface(surface, Size(width, height))
     }
 
-    private val redrawAfterSurface = Runnable { redraw() }
+    /**
+     * Shows the paused frame on the current surface again. A seek decodes it anew, which also works
+     * when the first frame went to a surface that has been replaced since (a redraw from the frame
+     * cache has nothing to show then).
+     */
+    private val redrawAfterSurface = Runnable {
+        val p = player ?: return@Runnable
+        if (p.isPlaying || !hasComposition) return@Runnable
+        if (multi || playerStale) {
+            scheduleMultiRebuild(150)
+            return@Runnable
+        }
+        if (p.playbackState == Player.STATE_READY || p.playbackState == Player.STATE_ENDED) {
+            Log.d(TAG, "showing the paused frame again at ${p.currentPosition} ms")
+            p.seekTo(p.currentPosition)
+        }
+    }
 
     /** A new surface (e.g. back from the background) starts empty: show the paused frame again. */
     private val surfaceCallback = object : SurfaceHolder.Callback {
         override fun surfaceCreated(holder: SurfaceHolder) {}
 
         override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
+            Log.d(TAG, "preview surface ${width}x$height")
             handler.removeCallbacks(redrawAfterSurface)
             handler.postDelayed(redrawAfterSurface, 150)
         }

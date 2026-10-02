@@ -60,7 +60,14 @@ object T {
 
     /** Full-screen screenshot including SurfaceViews (the video preview). */
     fun screenshot(name: String): Bitmap? {
-        val shot = runCatching { instrumentation.uiAutomation.takeScreenshot() }.getOrNull() ?: return null
+        // takeScreenshot occasionally returns null (e.g. right after another capture): retry.
+        var shot: Bitmap? = null
+        for (attempt in 0 until 4) {
+            shot = runCatching { instrumentation.uiAutomation.takeScreenshot() }.getOrNull()
+            if (shot != null) break
+            Thread.sleep(400)
+        }
+        if (shot == null) return null
         val scaled = Bitmap.createScaledBitmap(shot, shot.width / 2, shot.height / 2, true)
         save(scaled, name, jpeg = true)
         return scaled
