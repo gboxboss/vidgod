@@ -6,6 +6,8 @@ name: deps-mirror
 
 on:
   workflow_dispatch:
+  push:
+    branches: [ deps-request ]
 
 permissions:
   contents: write
