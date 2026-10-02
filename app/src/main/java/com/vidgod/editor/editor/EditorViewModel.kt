@@ -531,6 +531,7 @@ class EditorViewModel(app: Application, val projectId: String) : AndroidViewMode
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
+                com.vidgod.editor.data.Diagnostics.log(getApplication(), "Task failed: $label", e)
                 toast(e.message ?: "Something went wrong")
             } finally {
                 _busy.value = null

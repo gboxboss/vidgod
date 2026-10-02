@@ -15,6 +15,7 @@ class VidGodApp : Application() {
     override fun onCreate() {
         super.onCreate()
         instance = this
+        com.vidgod.editor.data.Diagnostics.install(this)
         repository = ProjectRepository(this)
     }
 

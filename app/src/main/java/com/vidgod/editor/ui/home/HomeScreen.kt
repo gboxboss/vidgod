@@ -28,6 +28,8 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -152,6 +154,9 @@ fun HomeScreen(openEditor: (String, String?) -> Unit, vm: HomeViewModel = viewMo
         )
     }
 
+    val ctx = LocalContext.current
+    var crash by remember { mutableStateOf(com.vidgod.editor.data.Diagnostics.takeCrash(ctx)) }
+    var licenses by remember { mutableStateOf<String?>(null) }
     var renaming by remember { mutableStateOf<ProjectSummary?>(null) }
     var deleting by remember { mutableStateOf<ProjectSummary?>(null) }
 
@@ -173,6 +178,25 @@ fun HomeScreen(openEditor: (String, String?) -> Unit, vm: HomeViewModel = viewMo
                             "PRO", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Black,
                             modifier = Modifier.background(VG.Accent2, RoundedCornerShape(4.dp)).padding(horizontal = 5.dp, vertical = 1.dp),
                         )
+                        Spacer(Modifier.weight(1f))
+                        var menuOpen by remember { mutableStateOf(false) }
+                        Box {
+                            IconButton({ menuOpen = true }) { Icon(Icons.Default.MoreVert, "Menu", tint = VG.TextDim) }
+                            DropdownMenu(menuOpen, { menuOpen = false }) {
+                                DropdownMenuItem({ Text("Report a problem") }, {
+                                    menuOpen = false
+                                    val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                        type = "text/plain"
+                                        putExtra(android.content.Intent.EXTRA_TEXT, com.vidgod.editor.data.Diagnostics.report(ctx))
+                                    }
+                                    ctx.startActivity(android.content.Intent.createChooser(send, "Share diagnostics"))
+                                })
+                                DropdownMenuItem({ Text("Font licenses") }, {
+                                    menuOpen = false
+                                    licenses = runCatching { ctx.assets.open("fonts/LICENSES.txt").bufferedReader().readText() }.getOrNull()
+                                })
+                            }
+                        }
                     }
                     Text("Every pro feature unlocked. No watermark.", color = VG.TextDim, fontSize = 13.sp)
                     Spacer(Modifier.height(16.dp))
@@ -222,6 +246,45 @@ fun HomeScreen(openEditor: (String, String?) -> Unit, vm: HomeViewModel = viewMo
             text = { OutlinedTextField(name, { name = it }, singleLine = true) },
             confirmButton = { TextButton({ vm.rename(p.id, name); renaming = null }) { Text("Save") } },
             dismissButton = { TextButton({ renaming = null }) { Text("Cancel") } },
+        )
+    }
+    crash?.let { report ->
+        AlertDialog(
+            onDismissRequest = { crash = null },
+            title = { Text("VidGod closed unexpectedly") },
+            text = {
+                Column(Modifier.height(260.dp).verticalScroll(rememberScrollState())) {
+                    Text("Sorry about that. Share this report so it can be fixed:", fontSize = 13.sp, color = VG.TextDim)
+                    Spacer(Modifier.height(8.dp))
+                    Text(report, fontSize = 10.sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
+                }
+            },
+            confirmButton = {
+                TextButton({
+                    val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(android.content.Intent.EXTRA_TEXT, report)
+                    }
+                    ctx.startActivity(android.content.Intent.createChooser(send, "Share crash report"))
+                    crash = null
+                }) { Text("Share report") }
+            },
+            dismissButton = { TextButton({ crash = null }) { Text("Close") } },
+        )
+    }
+    licenses?.let { text ->
+        AlertDialog(
+            onDismissRequest = { licenses = null },
+            title = { Text("Open-source licenses") },
+            text = {
+                Column(Modifier.height(320.dp).verticalScroll(rememberScrollState())) {
+                    Text(
+                        "VidGod uses AndroidX Media3, Jetpack Compose, ML Kit, Vosk (Apache 2.0), Coil, Kotlin and these fonts:\n\n$text",
+                        fontSize = 11.sp,
+                    )
+                }
+            },
+            confirmButton = { TextButton({ licenses = null }) { Text("Close") } },
         )
     }
     deleting?.let { p ->

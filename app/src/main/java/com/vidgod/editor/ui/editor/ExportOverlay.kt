@@ -82,7 +82,8 @@ fun ExportOverlay(vm: EditorViewModel, project: Project, onClose: () -> Unit) {
                 state = ExportState.Settings
                 throw e
             } catch (e: Exception) {
-                state = ExportState.Failed(e.message ?: e.toString())
+                com.vidgod.editor.data.Diagnostics.log(context, "Export failed", e)
+                state = ExportState.Failed((e.message ?: e.toString()) + (e.cause?.let { "\n" + it.message } ?: ""))
             }
         }
     }

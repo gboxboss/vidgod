@@ -74,6 +74,7 @@ class PreviewController(private val context: Context) {
 
         override fun onPlayerError(error: PlaybackException) {
             Log.e(TAG, "Preview error", error)
+            com.vidgod.editor.data.Diagnostics.log(context, "Preview error: ${error.errorCodeName}", error)
             _error.value = error.message ?: error.errorCodeName
             // Recover: rebuild the player on the next update.
             if (errorRetries < 2) {
@@ -139,7 +140,11 @@ class PreviewController(private val context: Context) {
         val sig = Structure.signature(project) + "|" + previewShortSide
         signature = sig
         val built = runCatching { factory.build(project, live, previewShortSide, 30) }
-            .onFailure { Log.e(TAG, "Composition build failed", it); _error.value = it.message }
+            .onFailure {
+                Log.e(TAG, "Composition build failed", it)
+                com.vidgod.editor.data.Diagnostics.log(context, "Composition build failed", it)
+                _error.value = it.message
+            }
             .getOrNull()
         if (built == null) {
             player?.stop()
