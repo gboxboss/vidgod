@@ -190,7 +190,7 @@ fun EditorScreen(projectId: String, initialAction: String?, onBack: () -> Unit) 
                 onClose = onBack,
                 onExport = { vm.preview.pause(); vm.openPanel(Panel.EXPORT) },
             )
-            PreviewPane(vm, project, selection, positionState, canvasSize, Modifier.weight(1f).fillMaxWidth())
+            PreviewPane(vm, project, selection, positionState, canvasSize, Modifier.weight(1f).fillMaxWidth(), showSurface = !fullscreen)
             ControlsRow(
                 vm = vm,
                 position = positionState,

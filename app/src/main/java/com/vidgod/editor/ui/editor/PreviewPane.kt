@@ -78,17 +78,22 @@ fun PreviewPane(
     position: androidx.compose.runtime.State<Long>,
     canvasSize: Pair<Int, Int>,
     modifier: Modifier = Modifier,
+    // Off while the full-screen preview shows: surfaces are composited below the window, so a
+    // second one would show through the full-screen one.
+    showSurface: Boolean = true,
 ) {
     BoxWithConstraints(modifier.background(Color(0xFF0B0B0C)), contentAlignment = Alignment.Center) {
         val aspect = project.canvasAspect
         val boxAspect = maxWidth.value / maxHeight.value
         val (w, h) = if (aspect > boxAspect) maxWidth to maxWidth / aspect else maxHeight * aspect to maxHeight
         Box(Modifier.size(w, h).background(Color.Black)) {
-            AndroidView(
-                factory = { ctx -> SurfaceView(ctx).also { vm.preview.attach(it) } },
-                onRelease = { vm.preview.detach(it) },
-                modifier = Modifier.fillMaxSize(),
-            )
+            if (showSurface) {
+                AndroidView(
+                    factory = { ctx -> SurfaceView(ctx).also { vm.preview.attach(it) } },
+                    onRelease = { vm.preview.detach(it) },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
             if (project.clips.isEmpty()) return@Box
             val eyedropper by vm.eyedropper.collectAsState()
             if (eyedropper != null) {

@@ -394,7 +394,16 @@ class UiFlowTest {
             s.step("fullscreen") {
                 tapIcon("Full screen")
                 pause(1500)
-                T.screenshot("ui_fullscreen")
+                // The 9:16 video fills the screen's width: its lower half is below the editor's
+                // preview area.
+                val shot = checkNotNull(T.screenshot("ui_fullscreen")) { "No screenshot" }
+                val crop = android.graphics.Bitmap.createBitmap(
+                    shot, (shot.width * 0.35f).toInt(), (shot.height * 0.55f).toInt(),
+                    (shot.width * 0.3f).toInt(), (shot.height * 0.15f).toInt(),
+                )
+                val (mean, sd) = Inspect.stats(crop)
+                T.log("full screen lower half: mean=%.1f sd=%.1f".format(mean, sd))
+                check(sd > 4.0 || mean > 30.0) { "The full-screen preview does not fill the screen (lower half blank, sd=$sd)" }
                 tapIcon("Exit full screen")
                 pause(800)
             }
