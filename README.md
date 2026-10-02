@@ -58,6 +58,10 @@ Open in Android Studio (or run `./gradlew assembleRelease`). Requires JDK 17+.
 ## Testing
 Every push to a `claude/**` branch runs the app on an Android emulator
 (`.github/workflows/emulator-test.yml`): real exports checked with ffprobe, the preview player,
-a full tap-through of the editor, the system photo picker, every effect/transition/filter/font,
-and a smoke test of the minified release APK. Screenshots, frames of exported videos, logs and
-a summary land on the `ci-results` branch. See DEVELOPMENT.md.
+a full tap-through of the editor (play/pause, going to the background, scrubbing, trimming both
+ends, pinch zoom, every clip tool and panel, text, stickers, sound effects, music from the file
+picker, aspect ratios, full screen, export, reopening/duplicating/renaming/deleting projects),
+the system photo picker, every effect/transition/filter/font, offline auto captions and text to
+speech, and a smoke test of the minified release APK (including captions and text to speech).
+Screenshots, frames of exported videos, logs and a summary land on the `ci-results` branch.
+See DEVELOPMENT.md.
