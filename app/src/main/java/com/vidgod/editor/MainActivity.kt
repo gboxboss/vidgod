@@ -56,6 +56,7 @@ class MainActivity : ComponentActivity() {
             Intent.ACTION_SEND_MULTIPLE ->
                 (if (Build.VERSION.SDK_INT >= 33) intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java)
                 else @Suppress("DEPRECATION") intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM)).orEmpty()
+            Intent.ACTION_VIEW, Intent.ACTION_EDIT -> listOfNotNull(intent.data)
             else -> emptyList()
         }
         if (uris.isEmpty()) return

@@ -78,6 +78,9 @@ private class ClipCanvasProgram(
 
     private val blurA = FboHolder()
     private val blurB = FboHolder()
+    private val bgBlurA = FboHolder()
+    private val bgBlurB = FboHolder()
+    private val bgMap = FloatArray(4)
     private val temp = FboHolder()
 
     private var bgImageTex = 0
@@ -149,12 +152,10 @@ private class ClipCanvasProgram(
                 canvas.background == BackgroundKind.IMAGE && canvas.backgroundImageUri != null -> 3f
                 else -> 1f
             }
-            val needBlur = bgMode == 2f || anim.blur > 0.01f
-            val blurTex = if (needBlur) {
-                computeBlur(inputTexId, if (bgMode == 2f) canvas.blur else 0.6f)
-            } else {
-                inputTexId
-            }
+            coverMap(inW.toFloat() / inH, outW.toFloat() / outH, bgMap)
+            // Background blur is rendered in canvas space (no blocky magnification of a small copy).
+            val bgBlurTex = if (bgMode == 2f) computeBlur(inputTexId, canvas.blur, bgMap, bgBlurA, bgBlurB) else inputTexId
+            val blurTex = if (anim.blur > 0.01f) computeBlur(inputTexId, 0.6f, null, blurA, blurB) else inputTexId
             val bgTex = if (bgMode == 3f) ensureBgImage(canvas.backgroundImageUri!!) else 0
 
             // ---- transition into this clip ----
@@ -173,6 +174,7 @@ private class ClipCanvasProgram(
             sh.texture("uTex", 0, inputTexId)
             sh.texture("uBlurTex", 1, blurTex)
             sh.texture("uBgTex", 2, if (bgTex != 0) bgTex else inputTexId)
+            sh.texture("uBgBlurTex", 3, bgBlurTex)
             sh.setMat3("uLayer", layer)
             sh.set4f("uCrop", crop.left, crop.top, crop.right, crop.bottom)
             sh.set2f("uFlip", if (t.flipH) 1f else 0f, if (t.flipV) 1f else 0f)
@@ -182,7 +184,6 @@ private class ClipCanvasProgram(
             sh.set1f("uBgMode", bgMode)
             sh.setColor("uBgColor", canvas.backgroundColor, 1f)
             // cover-fit mapping from canvas uv to input uv / background image uv
-            putCover(sh, "uBgMap", inW.toFloat() / inH, wc / hc)
             putCover(sh, "uBgImgMap", bgImageW.toFloat() / bgImageH, wc / hc)
             sh.set1f("uLayerBlur", anim.blur.coerceIn(0f, 1f))
             sh.set2f("uWipe", anim.wipe, anim.wipeDir.toFloat())
@@ -232,35 +233,51 @@ private class ClipCanvasProgram(
     }
 
     private fun putCover(sh: Shader, name: String, srcAspect: Float, dstAspect: Float) {
-        // uv_src = uv_dst * scale + offset, covering the destination.
+        val m = FloatArray(4)
+        coverMap(srcAspect, dstAspect, m)
+        sh.set4f(name, m[0], m[1], m[2], m[3])
+    }
+
+    /** uv_src = uv_dst * (m0, m1) + (m2, m3), so that the source covers the destination. */
+    private fun coverMap(srcAspect: Float, dstAspect: Float, m: FloatArray) {
         if (srcAspect > dstAspect) {
             val sx = dstAspect / srcAspect
-            sh.set4f(name, sx, 1f, 0.5f - 0.5f * sx, 0f)
+            m[0] = sx; m[1] = 1f; m[2] = 0.5f - 0.5f * sx; m[3] = 0f
         } else {
             val sy = srcAspect / dstAspect
-            sh.set4f(name, 1f, sy, 0f, 0.5f - 0.5f * sy)
+            m[0] = 1f; m[1] = sy; m[2] = 0f; m[3] = 0.5f - 0.5f * sy
         }
     }
 
-    private fun computeBlur(inputTexId: Int, strength: Float): Int {
-        val longSide = 160
+    /**
+     * Blurs the input into a small texture. With [map] (canvas uv -> input uv) the result is in
+     * canvas space (used for the background); without, it is in input space (layer blur).
+     */
+    private fun computeBlur(inputTexId: Int, strength: Float, map: FloatArray?, holderA: FboHolder, holderB: FboHolder): Int {
+        val longSide = 128
+        val srcW = if (map != null) outW else inW
+        val srcH = if (map != null) outH else inH
         val w: Int
         val h: Int
-        if (inW >= inH) {
-            w = longSide; h = max(8, longSide * inH / max(1, inW))
+        if (srcW >= srcH) {
+            w = longSide; h = max(8, longSide * srcH / max(1, srcW))
         } else {
-            h = longSide; w = max(8, longSide * inW / max(1, inH))
+            h = longSide; w = max(8, longSide * srcW / max(1, srcH))
         }
-        val a = blurA.get(w, h)
-        val b = blurB.get(w, h)
+        val mx = map?.get(0) ?: 1f
+        val my = map?.get(1) ?: 1f
+        val a = holderA.get(w, h)
+        val b = holderB.get(w, h)
         a.bind()
         copy!!.use()
         copy!!.texture("uTex", 0, inputTexId)
         copy!!.set2f("uTexel", 1f / inW, 1f / inH)
-        copy!!.set2f("uStep", max(1f, inW / w.toFloat() / 3f), max(1f, inH / h.toFloat() / 3f))
+        copy!!.set4f("uMap", mx, my, map?.get(2) ?: 0f, map?.get(3) ?: 0f)
+        // Spread the 3x3 taps over the input area that one output texel covers.
+        copy!!.set2f("uStep", max(1f, inW * mx / w / 3f), max(1f, inH * my / h / 3f))
         copy!!.draw()
-        val radius = 0.6f + strength.coerceIn(0f, 1f) * 2.6f
-        repeat(2) {
+        val radius = 1f + strength.coerceIn(0f, 1f) * 2.2f
+        repeat(3) {
             b.bind()
             blurH!!.use()
             blurH!!.texture("uTex", 0, a.texId)
@@ -324,7 +341,7 @@ private class ClipCanvasProgram(
     override fun release() {
         super.release()
         main?.release(); copy?.release(); blurH?.release(); transition?.release()
-        blurA.release(); blurB.release(); temp.release()
+        blurA.release(); blurB.release(); bgBlurA.release(); bgBlurB.release(); temp.release()
         if (bgImageTex != 0) GLES20.glDeleteTextures(1, intArrayOf(bgImageTex), 0)
     }
 
@@ -335,11 +352,13 @@ internal object CanvasShaders {
 uniform sampler2D uTex;
 uniform vec2 uTexel;
 uniform vec2 uStep;
+uniform vec4 uMap;
 void main() {
+  vec2 uv = vUv * uMap.xy + uMap.zw;
   vec4 acc = vec4(0.0);
   for (int x = -1; x <= 1; x++) {
 for (int y = -1; y <= 1; y++) {
-  acc += texture2D(uTex, vUv + vec2(float(x), float(y)) * uTexel * uStep);
+  acc += texture2D(uTex, clamp(uv + vec2(float(x), float(y)) * uTexel * uStep, 0.0, 1.0));
 }
   }
   gl_FragColor = acc / 9.0;
@@ -361,6 +380,7 @@ void main() {
 uniform sampler2D uTex;
 uniform sampler2D uBlurTex;
 uniform sampler2D uBgTex;
+uniform sampler2D uBgBlurTex;
 uniform mat3 uLayer;
 uniform vec4 uCrop;
 uniform vec2 uFlip;
@@ -369,7 +389,6 @@ uniform float uOpacity;
 uniform float uBright;
 uniform float uBgMode;
 uniform vec4 uBgColor;
-uniform vec4 uBgMap;
 uniform vec4 uBgImgMap;
 uniform float uLayerBlur;
 uniform vec2 uWipe;
@@ -467,7 +486,7 @@ a *= 1.0 - sstep(uWipe.x - 0.03, uWipe.x, coord);
   c.rgb = mix(c.rgb, vec3(1.0), clamp(uBright, 0.0, 1.0));
   if (uBgMode > 0.5) {
 vec3 bg = uBgColor.rgb;
-if (uBgMode > 1.5 && uBgMode < 2.5) bg = texture2D(uBlurTex, vUv * uBgMap.xy + uBgMap.zw).rgb;
+if (uBgMode > 1.5 && uBgMode < 2.5) bg = texture2D(uBgBlurTex, vUv).rgb;
 else if (uBgMode > 2.5) bg = texture2D(uBgTex, vUv * uBgImgMap.xy + uBgImgMap.zw).rgb;
 gl_FragColor = vec4(mix(bg, c.rgb, a), 1.0);
   } else {

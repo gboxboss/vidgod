@@ -29,10 +29,10 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      - name: Build app and test APKs (with emulator ABIs)
+      - name: Build app, test and release APKs (with emulator ABIs)
         run: |
           chmod +x gradlew
-          ./gradlew --no-daemon -Pvidgod.emulator :app:assembleDebug :app:assembleDebugAndroidTest
+          ./gradlew --no-daemon -Pvidgod.emulator :app:assembleDebug :app:assembleDebugAndroidTest :app:assembleRelease
 
       - name: Enable KVM
         run: |

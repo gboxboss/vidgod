@@ -54,6 +54,13 @@ for t in $TESTS; do
   echo "    exit=$? seconds=$(( $(date +%s) - start ))" | tee -a "$OUT/progress.txt"
 done
 
+# The release APK (minified, as users install it) gets an adb-driven smoke test.
+REL=app/build/outputs/apk/release/app-release.apk
+if [ -f "$REL" ]; then
+  timeout 900 python3 tools/release-smoke.py "$OUT/release-smoke" "$REL" app/src/androidTest/assets/media/portrait.mp4 \
+    > "$OUT/release-smoke.txt" 2>&1 || echo "release smoke exit=$?" >> "$OUT/release-smoke.txt"
+fi
+
 kill $LOGCAT_PID 2>/dev/null
 adb pull "/sdcard/Android/data/$PKG/files/test-out" "$OUT/test-out" > /dev/null 2>&1 || true
 adb exec-out run-as $PKG cat files/diagnostics/errors.txt > "$OUT/app_errors.txt" 2>/dev/null || true

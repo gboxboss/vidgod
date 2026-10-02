@@ -37,6 +37,9 @@ for name, status, _ in rows:
 for name, status, stack in rows:
     if status != "PASS" and stack:
         print(f"\n## {name} ({status})\n```\n" + "\n".join(stack.splitlines()[:40]) + "\n```")
+smoke = os.path.join(out, "release-smoke", "smoke.txt")
+if os.path.exists(smoke):
+    print("\n## Release APK smoke test\n```\n" + open(smoke, errors="replace").read()[-6000:] + "\n```")
 log = os.path.join(out, "test-out", "log.txt")
 if os.path.exists(log):
     print("\n## Test log\n```\n" + open(log, errors="replace").read()[-20000:] + "\n```")
