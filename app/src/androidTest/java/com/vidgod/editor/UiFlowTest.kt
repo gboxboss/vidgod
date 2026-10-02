@@ -20,6 +20,7 @@ import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.pinch
 import androidx.compose.ui.test.swipe
 import androidx.compose.ui.test.click
 import androidx.compose.ui.geometry.Offset
@@ -133,15 +134,17 @@ class UiFlowTest {
         compose.onAllNodes(hasTestTag(tag)).onFirst().fetchSemanticsNode().boundsInRoot.center.x
 
     /**
-     * Drags the trim handle [tag] of the selected clip by 20 steps of [stepPx] (slowly and slightly
-     * wobbly, like a finger), checks that the clip length changed, and undoes the trim.
+     * Drags the trim handle [tag] of the selected clip by 40% of the screen width in direction [dir]
+     * (slowly and slightly wobbly, like a finger), checks that the clip length changed, and undoes
+     * the trim.
      */
-    private fun dragHandle(tag: String, stepPx: Float) {
+    private fun dragHandle(tag: String, dir: Int) {
         val before = clipLengths()
         val total = timeText().substringAfter(" / ")
+        val step = dir * device.displayWidth * 0.025f
         compose.onAllNodes(hasTestTag(tag)).onFirst().performTouchInput {
             down(center)
-            for (k in 1..20) moveBy(Offset(stepPx, if (k % 2 == 0) 2f else -2f), 16)
+            for (k in 1..16) moveBy(Offset(step, if (k % 2 == 0) 2f else -2f), 16)
             up()
         }
         pause(1500)
@@ -248,21 +251,47 @@ class UiFlowTest {
             }
             s.step("trim_clip_start") {
                 // The playhead is at the start of the selected clip, so its left handle is on screen.
-                dragHandle("trim_start", 15f)
+                dragHandle("trim_start", 1)
             }
             s.step("trim_clip_end") {
-                // The end of the clip is off screen: scroll the timeline until its handle shows.
+                // The end of the clip is off screen: scroll the timeline (slowly, no fling) until
+                // its handle shows.
                 val screenW = device.displayWidth
-                for (k in 0 until 8) {
+                for (k in 0 until 10) {
                     if (handleX("trim_end") < screenW * 0.8f) break
                     compose.onNodeWithTag("timeline").performTouchInput {
-                        swipe(Offset(width * 0.75f, centerY), Offset(width * 0.4f, centerY), 400)
+                        swipe(Offset(width * 0.7f, centerY), Offset(width * 0.45f, centerY), 900)
                     }
                     pause(700)
                 }
                 val x = handleX("trim_end")
                 check(x in 0f..screenW * 0.8f) { "The end of the clip did not scroll into view (handle at $x of $screenW)" }
-                dragHandle("trim_end", -15f)
+                dragHandle("trim_end", -1)
+            }
+            s.step("pinch_zoom") {
+                fun clipWidth() = handleX("trim_end") - handleX("trim_start")
+                val w0 = clipWidth()
+                compose.onNodeWithTag("timeline").performTouchInput {
+                    pinch(
+                        Offset(centerX - width * 0.08f, centerY), Offset(centerX - width * 0.3f, centerY),
+                        Offset(centerX + width * 0.08f, centerY), Offset(centerX + width * 0.3f, centerY),
+                        500,
+                    )
+                }
+                pause(800)
+                val w1 = clipWidth()
+                compose.onNodeWithTag("timeline").performTouchInput {
+                    pinch(
+                        Offset(centerX - width * 0.3f, centerY), Offset(centerX - width * 0.08f, centerY),
+                        Offset(centerX + width * 0.3f, centerY), Offset(centerX + width * 0.08f, centerY),
+                        500,
+                    )
+                }
+                pause(800)
+                val w2 = clipWidth()
+                T.log("pinch zoom: clip width $w0 -> $w1 -> $w2")
+                check(w1 > w0 * 1.5f) { "Pinching out did not zoom in ($w0 -> $w1)" }
+                check(w2 < w1 / 1.5f) { "Pinching in did not zoom out ($w1 -> $w2)" }
             }
             for (tool in listOf("Speed", "Volume", "Animation", "Filters", "Adjust", "Effects", "Transform", "Opacity", "Mask", "Chroma key", "Voice FX", "Transition")) {
                 s.step("clip_$tool") {
