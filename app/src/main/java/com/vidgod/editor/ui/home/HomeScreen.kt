@@ -1,7 +1,6 @@
 package com.vidgod.editor.ui.home
 
 import android.app.Application
-import android.content.Intent
 import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -101,10 +100,8 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
             val name = "Project " + SimpleDateFormat("MMM d, HH:mm", Locale.getDefault()).format(Date())
             val p = repo.create(name)
             val sources = withContext(Dispatchers.IO) {
-                uris.mapNotNull { u ->
-                    runCatching { ctx.contentResolver.takePersistableUriPermission(u, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
-                    MediaProbe.probe(ctx, u)
-                }
+                val dir = repo.mediaDir(p.id)
+                uris.mapNotNull { u -> MediaProbe.probe(ctx, MediaProbe.retain(ctx, u, dir)) }
             }.filter { it.kind != MediaKind.AUDIO }
             var clips = sources.map { ProjectOps.visualFrom(it) }
             if (slideshow) {

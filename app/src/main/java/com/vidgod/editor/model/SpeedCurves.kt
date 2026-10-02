@@ -49,6 +49,18 @@ object SpeedCurves {
     /** Start of segment [i] in source time relative to the clip start. */
     fun segmentStartUs(rangeUs: Long, i: Int): Long = rangeUs * i / SEGMENTS
 
+    /**
+     * Index of the segment that contains source offset [timeUs], using exactly the boundaries of
+     * [segmentStartUs] (a time on a boundary belongs to the segment that starts there).
+     */
+    fun segmentAt(rangeUs: Long, timeUs: Long): Int {
+        if (rangeUs <= 0) return 0
+        var i = ((timeUs.toDouble() / rangeUs) * SEGMENTS).toInt().coerceIn(0, SEGMENTS - 1)
+        while (i < SEGMENTS - 1 && segmentStartUs(rangeUs, i + 1) <= timeUs) i++
+        while (i > 0 && segmentStartUs(rangeUs, i) > timeUs) i--
+        return i
+    }
+
     fun timelineDuration(rangeUs: Long, points: List<SpeedPoint>): Long {
         val speeds = segmentSpeeds(points)
         var total = 0.0

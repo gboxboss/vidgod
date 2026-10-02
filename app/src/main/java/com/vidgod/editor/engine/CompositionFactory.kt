@@ -1,6 +1,8 @@
 package com.vidgod.editor.engine
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.net.Uri
 import androidx.media3.common.C
 import androidx.media3.common.Effect
 import androidx.media3.common.MediaItem
@@ -12,6 +14,7 @@ import androidx.media3.common.audio.SonicAudioProcessor
 import androidx.media3.common.audio.SpeedProvider
 import androidx.media3.common.util.Size
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.effect.FrameDropEffect
 import androidx.media3.effect.StaticOverlaySettings
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.EditedMediaItem
@@ -36,6 +39,7 @@ import com.vidgod.editor.model.Project
 import com.vidgod.editor.model.SpeedCurves
 import com.vidgod.editor.model.VisualClip
 import com.vidgod.editor.model.VoiceFx
+import java.io.File
 import kotlin.math.min
 
 /** Turns a [Project] into a Media3 [Composition] used for both preview and export. */
@@ -48,6 +52,8 @@ class CompositionFactory(private val context: Context) {
         val canvasHeight: Int,
         val durationUs: Long,
         val sequenceCount: Int,
+        /** Sequences with a video track; more than one needs the multi-input video graph. */
+        val videoSequenceCount: Int,
     )
 
     /**
@@ -117,6 +123,12 @@ class CompositionFactory(private val context: Context) {
             main.addItem(visualItem(clip, live, spec, project, frameRate, mainTrack = true))
         }
         sequences.add(main.build())
+        if (sequences.size > 1) {
+            // Picture-in-picture: the compositor takes output frame times from its first input and
+            // draws it on top. A hidden, transparent "clock" layer first keeps the output at
+            // exactly [frameRate] (instead of following the PIP layer's own frame times).
+            sequences.add(0, clockSequence(total, frameRate))
+        }
         val videoSequenceCount = sequences.size
 
         // ---- audio lanes ----
@@ -140,6 +152,11 @@ class CompositionFactory(private val context: Context) {
 
         // ---- whole-frame effects: filters, effects, texts & stickers ----
         val compositionEffects = ArrayList<Effect>()
+        if (forExport && videoSequenceCount == 1) {
+            // Honour the chosen frame rate for 60 fps (or faster) footage; the multi-layer path
+            // gets its rate from the clock layer.
+            compositionEffects.add(FrameDropEffect.createDefaultFrameDropEffect(frameRate.toFloat()))
+        }
         if (project.filters.isNotEmpty()) {
             compositionEffects.add(ColorGradeEffect(globalFilterProvider(live)))
         }
@@ -166,7 +183,7 @@ class CompositionFactory(private val context: Context) {
         if (videoSequenceCount > 1) {
             builder.setVideoCompositorSettings(compositorSettings(cw, ch, layerRanges))
         }
-        return Built(builder.build(), cw, ch, total, sequences.size)
+        return Built(builder.build(), cw, ch, total, sequences.size, videoSequenceCount)
     }
 
     private fun compositorSettings(cw: Int, ch: Int, layerRanges: List<List<LongArray>>) =
@@ -174,11 +191,34 @@ class CompositionFactory(private val context: Context) {
             override fun getOutputSize(inputSizes: MutableList<Size>): Size = Size(cw, ch)
 
             override fun getOverlaySettings(inputId: Int, presentationTimeUs: Long): OverlaySettings {
-                val ranges = layerRanges.getOrNull(inputId) ?: return VISIBLE
+                if (inputId == 0) return HIDDEN // clock layer
+                val ranges = layerRanges.getOrNull(inputId - 1) ?: return VISIBLE
                 for (r in ranges) if (presentationTimeUs >= r[0] && presentationTimeUs < r[1]) return VISIBLE
                 return HIDDEN
             }
         }
+
+    /** A transparent still image spanning the project, emitting frames at [frameRate]. */
+    private fun clockSequence(durationUs: Long, frameRate: Int): EditedMediaItemSequence {
+        val item = MediaItem.Builder()
+            .setUri(Uri.fromFile(clockImage()))
+            .setImageDurationMs((durationUs / 1000).coerceAtLeast(1))
+            .build()
+        val edited = EditedMediaItem.Builder(item)
+            .setDurationUs(durationUs)
+            .setFrameRate(frameRate)
+            .build()
+        return EditedMediaItemSequence.Builder(setOf(C.TRACK_TYPE_VIDEO)).addItem(edited).build()
+    }
+
+    private fun clockImage(): File {
+        val f = File(context.cacheDir, "clock_layer.png")
+        if (f.length() > 0) return f
+        val bmp = Bitmap.createBitmap(16, 16, Bitmap.Config.ARGB_8888)
+        f.outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        bmp.recycle()
+        return f
+    }
 
     /** Shortens an overlay clip so it ends at most [maxDurationUs] after its start. */
     private fun clampToEnd(clip: VisualClip, maxDurationUs: Long): VisualClip? {
@@ -299,10 +339,7 @@ class CompositionFactory(private val context: Context) {
             val range = clip.sourceRangeUs
             val speeds = SpeedCurves.segmentSpeeds(clip.speedCurve)
             val provider = object : SpeedProvider {
-                override fun getSpeed(timeUs: Long): Float {
-                    val i = ((timeUs.toDouble() / range) * SpeedCurves.SEGMENTS).toInt().coerceIn(0, SpeedCurves.SEGMENTS - 1)
-                    return speeds[i]
-                }
+                override fun getSpeed(timeUs: Long): Float = speeds[SpeedCurves.segmentAt(range, timeUs)]
 
                 override fun getNextSpeedChangeTimeUs(timeUs: Long): Long {
                     for (i in 1 until SpeedCurves.SEGMENTS) {

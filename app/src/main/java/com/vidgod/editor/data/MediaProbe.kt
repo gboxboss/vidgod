@@ -1,6 +1,7 @@
 package com.vidgod.editor.data
 
 import android.content.Context
+import android.content.Intent
 import android.graphics.BitmapFactory
 import android.media.MediaExtractor
 import android.media.MediaFormat
@@ -8,14 +9,40 @@ import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
 import android.provider.OpenableColumns
+import android.webkit.MimeTypeMap
 import androidx.exifinterface.media.ExifInterface
 import com.vidgod.editor.model.MediaKind
 import com.vidgod.editor.model.MediaSource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.File
 
 /** Reads duration, size and track information of imported files. */
 object MediaProbe {
+
+    /**
+     * Makes sure [uri] stays readable after the app restarts. Picker and document URIs get a
+     * persistable permission; temporary grants (media shared from another app) are copied into
+     * [dir]. Blocking: call from a background thread.
+     */
+    fun retain(context: Context, uri: Uri, dir: File): Uri {
+        if (uri.scheme != "content" || uri.authority == context.packageName + ".files") return uri
+        val persisted = runCatching {
+            context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }.isSuccess
+        if (persisted) return uri
+        return runCatching {
+            var name = displayName(context, uri).ifBlank { "media" }.replace(Regex("[^A-Za-z0-9._-]"), "_")
+            if (!name.contains('.')) {
+                MimeTypeMap.getSingleton().getExtensionFromMimeType(context.contentResolver.getType(uri))?.let { name += ".$it" }
+            }
+            val out = File(dir, "${System.currentTimeMillis()}_$name")
+            context.contentResolver.openInputStream(uri)!!.use { input ->
+                out.outputStream().use { input.copyTo(it, 1 shl 16) }
+            }
+            Uri.fromFile(out)
+        }.getOrElse { uri }
+    }
 
     suspend fun probe(context: Context, uri: Uri, hintKind: MediaKind? = null): MediaSource? =
         withContext(Dispatchers.IO) {

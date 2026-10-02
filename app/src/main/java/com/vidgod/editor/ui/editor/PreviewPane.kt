@@ -9,7 +9,6 @@ import androidx.compose.foundation.gestures.calculateCentroid
 import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateRotation
 import androidx.compose.foundation.gestures.calculateZoom
-import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Box
@@ -57,7 +56,6 @@ import com.vidgod.editor.model.Project
 import com.vidgod.editor.model.Transform
 import com.vidgod.editor.model.VisualClip
 import kotlin.math.atan2
-import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -119,56 +117,101 @@ private fun SelectionLayer(vm: EditorViewModel, project: Project, selection: Sel
     val currentProject by rememberUpdatedState(project)
     val currentPos by rememberUpdatedState(positionUs)
 
+    val minBoxPx = with(density) { 24.dp.toPx() }
+    val handleTouchPx = with(density) { 28.dp.toPx() }
+
     BoxWithConstraints(
         Modifier.fillMaxSize().pointerInput(Unit) {
             awaitEachGesture {
-                val down = awaitFirstDown(requireUnconsumed = false)
-                val sel = currentSel
+                // Corner buttons consume their own touches.
+                val down = awaitFirstDown(requireUnconsumed = true)
+                val pw = size.width.toFloat()
+                val ph = size.height.toFloat()
+                var sel = currentSel
                 var b = currentBox
-                // Tap-to-select texts and stickers.
-                if (b == null || !inside(b, down.position.x / size.width, down.position.y / size.height, size.width.toFloat(), size.height.toFloat())) {
-                    val hit = hitTest(context, currentProject, currentPos, down.position.x / size.width, down.position.y / size.height, cw, ch)
+                val nx = down.position.x / pw
+                val ny = down.position.y / ph
+                val handle = b?.let { handlePosition(it, pw, ph, minBoxPx) }
+                val onHandle = handle != null && (down.position - handle).getDistance() <= handleTouchPx
+                var insideBox = b != null && inside(b, nx, ny, pw, ph)
+                if (!onHandle && !insideBox) {
+                    val hit = hitTest(context, currentProject, currentPos, nx, ny, cw, ch)
                     if (hit != null && hit != sel) {
+                        // Select and keep dragging the touched item in the same gesture.
                         vm.select(hit)
+                        sel = hit
+                        b = selectionBox(context, currentProject, hit, currentPos, cw, ch) ?: return@awaitEachGesture
+                        insideBox = true
+                    } else if (b == null) {
+                        return@awaitEachGesture
+                    } else if (sel is Selection.Text || sel is Selection.Sticker) {
+                        // Tapping empty space deselects a text or sticker.
+                        if (waitForUpOrCancellation() != null) vm.select(null)
                         return@awaitEachGesture
                     }
-                    if (b == null) return@awaitEachGesture
                 }
+                val selected = sel ?: return@awaitEachGesture
+                var box = b ?: return@awaitEachGesture
+                down.consume()
                 vm.preview.pause()
                 vm.beginGesture()
                 var moved = false
-                while (true) {
-                    val event = awaitPointerEvent()
-                    if (event.changes.none { it.pressed }) break
-                    val pan = event.calculatePan()
-                    val zoom = event.calculateZoom()
-                    val rot = event.calculateRotation()
-                    if (pan == Offset.Zero && zoom == 1f && rot == 0f) continue
-                    moved = true
-                    event.changes.forEach { if (it.positionChange() != Offset.Zero) it.consume() }
-                    val t = b!!.transform
-                    val nt = t.copy(
-                        x = t.x + pan.x / size.width,
-                        y = t.y + pan.y / size.height,
-                        scale = (t.scale * zoom).coerceIn(0.05f, 20f),
-                        rotation = t.rotation + rot,
-                    )
-                    applyTransform(vm, sel!!, nt, b.local, b.hasKeyframes)
-                    b = b.copy(transform = nt)
+                try {
+                    if (onHandle) {
+                        // Scale & rotate around the centre, following the finger.
+                        val s0 = box.transform
+                        val center = Offset(box.cx * pw, box.cy * ph)
+                        val startAngle = atan2(handle!!.y - center.y, handle.x - center.x)
+                        val startDist = (handle - center).getDistance().coerceAtLeast(1f)
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val c = event.changes.firstOrNull { it.id == down.id } ?: break
+                            if (!c.pressed) break
+                            if (c.positionChange() == Offset.Zero) continue
+                            c.consume()
+                            moved = true
+                            val ang = atan2(c.position.y - center.y, c.position.x - center.x)
+                            val dist = (c.position - center).getDistance()
+                            val nt = s0.copy(
+                                scale = (s0.scale * dist / startDist).coerceIn(0.05f, 20f),
+                                rotation = s0.rotation + Math.toDegrees((ang - startAngle).toDouble()).toFloat(),
+                            )
+                            applyTransform(vm, selected, nt, box.local, box.hasKeyframes)
+                        }
+                    } else {
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            if (event.changes.none { it.pressed }) break
+                            val pan = event.calculatePan()
+                            val zoom = event.calculateZoom()
+                            val rot = event.calculateRotation()
+                            if (pan == Offset.Zero && zoom == 1f && rot == 0f) continue
+                            moved = true
+                            event.changes.forEach { if (it.positionChange() != Offset.Zero) it.consume() }
+                            val t = box.transform
+                            val nt = t.copy(
+                                x = t.x + pan.x / pw,
+                                y = t.y + pan.y / ph,
+                                scale = (t.scale * zoom).coerceIn(0.05f, 20f),
+                                rotation = t.rotation + rot,
+                            )
+                            applyTransform(vm, selected, nt, box.local, box.hasKeyframes)
+                            box = box.copy(transform = nt)
+                        }
+                    }
+                } finally {
+                    vm.endGesture()
                 }
-                vm.endGesture()
-                if (!moved && sel != null) {
-                    // A tap on the selected text opens the editor.
-                    if (sel is Selection.Text) vm.openPanel(Panel.TEXT_EDIT)
-                }
+                // A tap on the selected text opens the text editor.
+                if (!moved && insideBox && selected is Selection.Text && selected == currentSel) vm.openPanel(Panel.TEXT_EDIT)
             }
         },
     ) {
         val b = box ?: return@BoxWithConstraints
         val pw = with(density) { maxWidth.toPx() }
         val ph = with(density) { maxHeight.toPx() }
-        val bw = max(b.w * pw, with(density) { 24.dp.toPx() })
-        val bh = max(b.h * ph, with(density) { 24.dp.toPx() })
+        val bw = max(b.w * pw, minBoxPx)
+        val bh = max(b.h * ph, minBoxPx)
         val left = b.cx * pw - bw / 2
         val top = b.cy * ph - bh / 2
         Box(
@@ -179,73 +222,45 @@ private fun SelectionLayer(vm: EditorViewModel, project: Project, selection: Sel
                 .border(1.5.dp, Color.White),
         ) {
             if (selection !is Selection.Main) {
-                CornerButton(Icons.Default.Close, Alignment.TopStart) { vm.deleteSelected() }
+                CornerButton(Icons.Default.Close, Alignment.TopStart, "Delete") { vm.deleteSelected() }
             }
             if (selection is Selection.Text) {
-                CornerButton(Icons.Default.Edit, Alignment.TopEnd) { vm.openPanel(Panel.TEXT_EDIT) }
+                CornerButton(Icons.Default.Edit, Alignment.TopEnd, "Edit text") { vm.openPanel(Panel.TEXT_EDIT) }
             }
         }
-        // Rotate & scale handle at the rotated bottom-right corner.
-        val theta = Math.toRadians(b.rotation.toDouble())
-        val ccx = b.cx * pw
-        val ccy = b.cy * ph
-        val hx = (ccx + Math.cos(theta) * bw / 2 - Math.sin(theta) * bh / 2).toFloat()
-        val hy = (ccy + Math.sin(theta) * bw / 2 + Math.cos(theta) * bh / 2).toFloat()
+        // Rotate & scale handle at the rotated bottom-right corner (dragged via the layer above).
+        val handle = handlePosition(b, pw, ph, minBoxPx)
         val handleR = with(density) { 12.dp.toPx() }
         Box(
             Modifier
-                .offset { IntOffset((hx - handleR).roundToInt(), (hy - handleR).roundToInt()) }
-                .size(24.dp).clip(CircleShape).background(Color.White)
-                .pointerInput(selection) {
-                    var start: Transform? = null
-                    var pointer = Offset.Zero
-                    var center = Offset.Zero
-                    var startAngle = 0.0
-                    var startDist = 1f
-                    var local = 0L
-                    var kf = false
-                    detectDragGestures(
-                        onDragStart = {
-                            val cb = currentBox ?: return@detectDragGestures
-                            vm.preview.pause()
-                            vm.beginGesture()
-                            start = cb.transform; local = cb.local; kf = cb.hasKeyframes
-                            val th = Math.toRadians(cb.rotation.toDouble())
-                            val w2 = max(cb.w * pw, 1f) / 2; val h2 = max(cb.h * ph, 1f) / 2
-                            center = Offset(cb.cx * pw, cb.cy * ph)
-                            pointer = Offset(
-                                (center.x + Math.cos(th) * w2 - Math.sin(th) * h2).toFloat(),
-                                (center.y + Math.sin(th) * w2 + Math.cos(th) * h2).toFloat(),
-                            )
-                            startAngle = Math.toDegrees(atan2((pointer.y - center.y).toDouble(), (pointer.x - center.x).toDouble()))
-                            startDist = hypot(pointer.x - center.x, pointer.y - center.y).coerceAtLeast(1f)
-                        },
-                        onDragEnd = { vm.endGesture() },
-                        onDragCancel = { vm.endGesture() },
-                    ) { change, drag ->
-                        change.consume()
-                        val s0 = start ?: return@detectDragGestures
-                        pointer += drag
-                        val ang = Math.toDegrees(atan2((pointer.y - center.y).toDouble(), (pointer.x - center.x).toDouble()))
-                        val dist = hypot(pointer.x - center.x, pointer.y - center.y)
-                        val nt = s0.copy(
-                            scale = (s0.scale * dist / startDist).coerceIn(0.05f, 20f),
-                            rotation = s0.rotation + (ang - startAngle).toFloat(),
-                        )
-                        applyTransform(vm, currentSel ?: return@detectDragGestures, nt, local, kf)
-                    }
-                },
+                .offset { IntOffset((handle.x - handleR).roundToInt(), (handle.y - handleR).roundToInt()) }
+                .size(24.dp).clip(CircleShape).background(Color.White),
             contentAlignment = Alignment.Center,
         ) { Icon(Icons.Default.OpenInFull, "Scale and rotate", tint = Color.Black, modifier = Modifier.size(14.dp)) }
     }
+}
+
+/** Position of the scale/rotate handle (rotated bottom-right corner) in layer pixels. */
+private fun handlePosition(b: Box2, pw: Float, ph: Float, minBoxPx: Float): Offset {
+    val bw = max(b.w * pw, minBoxPx)
+    val bh = max(b.h * ph, minBoxPx)
+    val theta = Math.toRadians(b.rotation.toDouble())
+    val ccx = b.cx * pw
+    val ccy = b.cy * ph
+    return Offset(
+        (ccx + Math.cos(theta) * bw / 2 - Math.sin(theta) * bh / 2).toFloat(),
+        (ccy + Math.sin(theta) * bw / 2 + Math.cos(theta) * bh / 2).toFloat(),
+    )
 }
 
 @Composable
 private fun androidx.compose.foundation.layout.BoxScope.CornerButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     align: Alignment,
+    description: String,
     onClick: () -> Unit,
 ) {
+    val click by rememberUpdatedState(onClick)
     Box(
         Modifier.align(align).offset(if (align == Alignment.TopStart) (-10).dp else 10.dp, (-10).dp)
             .size(24.dp).clip(CircleShape).background(Color.White)
@@ -254,11 +269,14 @@ private fun androidx.compose.foundation.layout.BoxScope.CornerButton(
                     val d = awaitFirstDown()
                     d.consume()
                     val up = waitForUpOrCancellation()
-                    if (up != null) onClick()
+                    if (up != null) {
+                        up.consume()
+                        click()
+                    }
                 }
             },
         contentAlignment = Alignment.Center,
-    ) { Icon(icon, null, tint = Color.Black, modifier = Modifier.size(14.dp)) }
+    ) { Icon(icon, description, tint = Color.Black, modifier = Modifier.size(14.dp)) }
 }
 
 private fun inside(b: Box2, nx: Float, ny: Float, pw: Float, ph: Float): Boolean {

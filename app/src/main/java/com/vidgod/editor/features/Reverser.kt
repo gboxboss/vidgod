@@ -116,6 +116,8 @@ object Reverser {
                 transformer = Transformer.Builder(context)
                     .setVideoMimeType(MimeTypes.VIDEO_H264)
                     .setEncoderFactory(encoder)
+                    // Keep portrait footage portrait instead of landscape + rotation metadata.
+                    .setPortraitEncodingEnabled(true)
                     .addListener(object : Transformer.Listener {
                         override fun onCompleted(composition: Composition, exportResult: ExportResult) {
                             handler.removeCallbacks(poll)
@@ -212,6 +214,10 @@ object Reverser {
         require(track >= 0) { "No video track" }
         ex.selectTrack(track)
         val inFormat = ex.getTrackFormat(track)
+        // Decode without rotation (the decoder would rotate into the encoder's surface and squash
+        // the picture); the rotation is written to the output file's metadata instead.
+        val rotation = if (inFormat.containsKey(MediaFormat.KEY_ROTATION)) inFormat.getInteger(MediaFormat.KEY_ROTATION) else 0
+        inFormat.setInteger(MediaFormat.KEY_ROTATION, 0)
         val times = ArrayList<Long>()
         while (true) {
             val t = ex.sampleTime
@@ -227,7 +233,7 @@ object Reverser {
         val encFormat = MediaFormat.createVideoFormat(MimeTypes.VIDEO_H264, width, height).apply {
             setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
             setInteger(MediaFormat.KEY_BIT_RATE, (width * height * frameRate * 0.2f).toInt().coerceIn(2_000_000, 40_000_000))
-            setFloat(MediaFormat.KEY_FRAME_RATE, frameRate)
+            setInteger(MediaFormat.KEY_FRAME_RATE, kotlin.math.round(frameRate).toInt().coerceAtLeast(1))
             setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
         }
         val encoder = MediaCodec.createEncoderByType(MimeTypes.VIDEO_H264)
@@ -239,6 +245,7 @@ object Reverser {
         decoder.start()
 
         val muxer = MediaMuxer(out.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+        if (rotation % 360 != 0) muxer.setOrientationHint(((rotation % 360) + 360) % 360)
         var videoTrack = -1
         var audioTrack = -1
         var muxing = false

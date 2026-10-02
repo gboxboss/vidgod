@@ -69,6 +69,11 @@ fun ExportOverlay(vm: EditorViewModel, project: Project, onClose: () -> Unit) {
     var state by remember { mutableStateOf<ExportState>(ExportState.Settings) }
     var job by remember { mutableStateOf<Job?>(null) }
     val s = project.export
+    // The preview is hidden behind this screen; free its decoders so the export can use them.
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        vm.preview.suspend()
+        onDispose { vm.preview.resume() }
+    }
     fun set(f: (ExportSettings) -> ExportSettings) = vm.update { it.copy(export = f(it.export)) }
     fun startExport() {
         job = scope.launch {

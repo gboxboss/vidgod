@@ -144,12 +144,7 @@ fun EditorScreen(projectId: String, initialAction: String?, onBack: () -> Unit) 
             PickTarget.REPLACE -> selection?.let { vm.replaceClip(it, uris.first()) }
             PickTarget.OVERLAY -> uris.forEach { vm.addOverlay(it) }
             PickTarget.STICKER -> vm.addStickerImage(uris.first())
-            PickTarget.CANVAS_BG -> {
-                runCatching {
-                    app.contentResolver.takePersistableUriPermission(uris.first(), android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                }
-                vm.update { it.copy(canvas = it.canvas.copy(background = com.vidgod.editor.model.BackgroundKind.IMAGE, backgroundImageUri = uris.first().toString())) }
-            }
+            PickTarget.CANVAS_BG -> vm.setCanvasBackgroundImage(uris.first())
             PickTarget.EXTRACT_AUDIO -> vm.extractAudioFrom(uris.first())
         }
     }

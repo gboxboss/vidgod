@@ -1,7 +1,6 @@
 package com.vidgod.editor.editor
 
 import android.app.Application
-import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
@@ -177,18 +176,14 @@ class EditorViewModel(app: Application, val projectId: String) : AndroidViewMode
 
     // ---------------------------------------------------------------- import
 
-    private fun persist(uri: Uri) {
-        runCatching {
-            getApplication<Application>().contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
+    /** Keeps [uri] readable after a restart (persisted permission or a private copy). */
+    private suspend fun retain(uri: Uri): Uri = withContext(Dispatchers.IO) {
+        MediaProbe.retain(getApplication(), uri, repo.mediaDir(projectId))
     }
 
     private suspend fun probeAll(uris: List<Uri>, hint: MediaKind? = null): List<MediaSource> {
         val ctx = getApplication<Application>()
-        return uris.mapNotNull { u ->
-            persist(u)
-            MediaProbe.probe(ctx, u, hint)
-        }
+        return uris.mapNotNull { u -> MediaProbe.probe(ctx, retain(u), hint) }
     }
 
     fun importMain(uris: List<Uri>, insertAtPlayhead: Boolean = false) {
@@ -304,9 +299,15 @@ class EditorViewModel(app: Application, val projectId: String) : AndroidViewMode
         select(Selection.Sticker(s.id))
     }
 
+    fun setCanvasBackgroundImage(uri: Uri) {
+        viewModelScope.launch {
+            val kept = retain(uri).toString()
+            update { it.copy(canvas = it.canvas.copy(background = com.vidgod.editor.model.BackgroundKind.IMAGE, backgroundImageUri = kept)) }
+        }
+    }
+
     fun addStickerImage(uri: Uri) {
-        persist(uri)
-        addSticker(StickerKind.IMAGE, uri.toString())
+        viewModelScope.launch { addSticker(StickerKind.IMAGE, retain(uri).toString()) }
     }
 
     fun addEffect(fxId: String) {

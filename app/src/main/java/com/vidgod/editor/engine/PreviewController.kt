@@ -3,12 +3,15 @@ package com.vidgod.editor.engine
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
+import android.view.Surface
 import android.view.SurfaceView
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.ExperimentalApi
+import androidx.media3.common.util.Size
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.MultipleInputVideoGraph
 import androidx.media3.effect.DefaultVideoFrameProcessor
@@ -30,7 +33,13 @@ class PreviewController(private val context: Context) {
     private val handler = Handler(Looper.getMainLooper())
 
     private var player: CompositionPlayer? = null
-    private var playerSequences = 0
+    /** True while the player uses the multi-input video graph (picture-in-picture layers). */
+    private var multi = false
+    /**
+     * The multi-input video graph cannot be reset: once its inputs ended (end of playback) or
+     * after an error, the player must be recreated before it can show frames again.
+     */
+    private var playerStale = false
     /** Attached views, most recent last (fullscreen preview sits on top of the editor's). */
     private val surfaces = ArrayList<SurfaceView>()
     private val surfaceView: SurfaceView? get() = surfaces.lastOrNull()
@@ -71,6 +80,7 @@ class PreviewController(private val context: Context) {
             if (playbackState == Player.STATE_ENDED) {
                 player?.pause()
                 _positionUs.value = live.project.durationUs
+                if (multi) playerStale = true
             }
         }
 
@@ -78,7 +88,8 @@ class PreviewController(private val context: Context) {
             Log.e(TAG, "Preview error", error)
             com.vidgod.editor.data.Diagnostics.log(context, "Preview error: ${error.errorCodeName}", error)
             _error.value = error.message ?: error.errorCodeName
-            // Recover: rebuild the player on the next update.
+            playerStale = true
+            // Recover: recreate the player with the current project.
             if (errorRetries < 2) {
                 errorRetries++
                 signature = null
@@ -90,18 +101,25 @@ class PreviewController(private val context: Context) {
     private fun createPlayer(multi: Boolean): CompositionPlayer {
         val b = CompositionPlayer.Builder(context)
             .setAudioAttributes(AudioAttributes.DEFAULT, true)
-            .experimentalSetEnableReplayableCache(true)
         if (multi) {
-            b.setVideoGraphFactory(
-                MultipleInputVideoGraph.Factory(
-                    DefaultVideoFrameProcessor.Factory.Builder().setEnableReplayableCache(true).build(),
-                ),
-            )
+            // Frame redraws are not supported by the multi-input graph; edits are shown by seeking.
+            b.setVideoGraphFactory(MultipleInputVideoGraph.Factory(DefaultVideoFrameProcessor.Factory.Builder().build()))
+        } else {
+            b.experimentalSetEnableReplayableCache(true)
         }
         return b.build().also { p ->
             p.addListener(listener)
-            surfaceView?.let { p.setVideoSurfaceView(it) }
+            val out = outputSurface
+            if (out != null) p.setVideoSurface(out.first, out.second) else surfaceView?.let { p.setVideoSurfaceView(it) }
         }
+    }
+
+    private var outputSurface: Pair<Surface, Size>? = null
+
+    /** Renders into [surface] instead of a SurfaceView (offscreen rendering, tests). */
+    fun setOutputSurface(surface: Surface, width: Int, height: Int) {
+        outputSurface = surface to Size(width, height)
+        player?.setVideoSurface(surface, Size(width, height))
     }
 
     fun attach(view: SurfaceView) {
@@ -128,6 +146,7 @@ class PreviewController(private val context: Context) {
     fun update(project: Project, immediate: Boolean = false) {
         pendingProject = project
         live.project = project
+        if (suspended) return
         val sig = Structure.signature(project) + "|" + previewShortSide
         if (sig == signature && player != null) {
             handler.removeCallbacks(rebuild)
@@ -142,6 +161,8 @@ class PreviewController(private val context: Context) {
 
     private fun rebuildNow(project: Project, fromError: Boolean = false) {
         if (!fromError) errorRetries = 0
+        handler.removeCallbacks(rebuild)
+        handler.removeCallbacks(seekRedraw)
         val sig = Structure.signature(project) + "|" + previewShortSide
         signature = sig
         val built = runCatching { factory.build(project, live, previewShortSide, 30) }
@@ -157,27 +178,60 @@ class PreviewController(private val context: Context) {
             return
         }
         _canvasSize.value = built.canvasWidth to built.canvasHeight
-        val multi = built.sequenceCount > 1
+        val wantMulti = built.videoSequenceCount > 1
         val p = player
         val wasPlaying = p?.isPlaying == true
         val positionMs = (_positionUs.value / 1000).coerceIn(0, (built.durationUs / 1000 - 1).coerceAtLeast(0))
-        if (p == null || (playerSequences > 1) != multi) {
+        _positionUs.value = positionMs * 1000
+        // The multi-input graph keeps its first composition's effects and inputs, so it is
+        // recreated for every new composition (as Media3's own composition demo does).
+        if (p == null || wantMulti || multi || playerStale) {
             p?.release()
-            player = createPlayer(multi)
+            player = createPlayer(wantMulti)
+            playerStale = false
         }
-        playerSequences = built.sequenceCount
+        multi = wantMulti
         val np = player!!
-        np.setComposition(built.composition, positionMs)
-        np.prepare()
+        try {
+            np.setComposition(built.composition, positionMs)
+            np.prepare()
+        } catch (e: Exception) {
+            Log.e(TAG, "setComposition failed", e)
+            com.vidgod.editor.data.Diagnostics.log(context, "Preview setComposition failed", e)
+            _error.value = e.message
+            playerStale = true
+            hasComposition = false
+            return
+        }
         hasComposition = true
         if (wasPlaying) np.play()
         _error.value = null
+    }
+
+    private var lastSeekRedrawMs = 0L
+    private val seekRedraw = Runnable {
+        lastSeekRedrawMs = SystemClock.uptimeMillis()
+        val p = player ?: return@Runnable
+        if (!p.isPlaying) p.seekTo(_positionUs.value / 1000)
     }
 
     /** Re-renders the current frame after a live property change. */
     fun redraw() {
         val p = player ?: return
         if (p.isPlaying || !hasComposition) return
+        if (playerStale) {
+            // Ended multi-input graph: recreate it (debounced, edits often come in bursts).
+            handler.removeCallbacks(rebuild)
+            handler.postDelayed(rebuild, 120)
+            return
+        }
+        if (multi) {
+            // Seek to the current frame, at most ~10 times per second while dragging.
+            handler.removeCallbacks(seekRedraw)
+            val wait = (lastSeekRedrawMs + 100 - SystemClock.uptimeMillis()).coerceAtLeast(0)
+            handler.postDelayed(seekRedraw, wait)
+            return
+        }
         try {
             p.experimentalRedrawLastFrame()
         } catch (e: Exception) {
@@ -186,9 +240,10 @@ class PreviewController(private val context: Context) {
     }
 
     fun play() {
-        val p = player ?: return
+        if (player == null) return
         if (_positionUs.value >= live.project.durationUs - 50_000) seekTo(0)
-        p.play()
+        else if (playerStale && hasComposition) rebuildNow(pendingProject ?: live.project)
+        player?.play()
     }
 
     fun pause() {
@@ -201,6 +256,10 @@ class PreviewController(private val context: Context) {
     fun seekTo(us: Long) {
         val clamped = us.coerceIn(0, (live.project.durationUs - 1000).coerceAtLeast(0))
         _positionUs.value = clamped
+        if (playerStale && hasComposition) {
+            rebuildNow(pendingProject ?: live.project)
+            return
+        }
         player?.seekTo(clamped / 1000)
     }
 
@@ -208,11 +267,37 @@ class PreviewController(private val context: Context) {
         runCatching { player?.setScrubbingModeEnabled(enabled) }
     }
 
+    private var suspended = false
+
+    /**
+     * Releases the player and its decoders (export needs the device's codecs); updates are
+     * remembered and shown again by [resume].
+     */
+    fun suspend() {
+        suspended = true
+        handler.removeCallbacksAndMessages(null)
+        player?.release()
+        player = null
+        signature = null
+        hasComposition = false
+        playerStale = false
+        _isPlaying.value = false
+    }
+
+    fun resume() {
+        if (!suspended) return
+        suspended = false
+        val p = pendingProject ?: live.project
+        if (p.clips.isNotEmpty()) rebuildNow(p)
+    }
+
     fun release() {
         handler.removeCallbacksAndMessages(null)
         player?.release()
         player = null
         signature = null
+        hasComposition = false
+        playerStale = false
     }
 
     companion object {
@@ -233,8 +318,9 @@ object Structure {
         sb.append('|')
         p.overlays.forEach { c ->
             sb.append(c.id).append(c.playbackUri).append(c.startUs).append(c.layer).append(c.trimStartUs)
-                .append(c.trimEndUs).append(c.speed).append(c.voiceFx).append(c.denoise).append(c.fx.hashCode())
-                .append(c.muted).append(c.removeBackground).append(';')
+                .append(c.trimEndUs).append(c.speed).append(c.speedCurve.hashCode()).append(c.keepPitch)
+                .append(c.voiceFx).append(c.denoise).append(c.fx.hashCode())
+                .append(c.muted).append(c.volume > 0f).append(c.removeBackground).append(';')
         }
         sb.append('|')
         p.audios.forEach { a ->

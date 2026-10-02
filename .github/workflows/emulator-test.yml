@@ -1,0 +1,77 @@
+# Installs the app on an Android emulator and uses it for real: imports media, plays, opens every
+# tool, edits, exports. Screenshots, exported videos' frames, logs and a summary are published to
+# the `ci-results` branch (and as a workflow artifact) so failures can be inspected.
+name: Emulator tests
+
+on:
+  push:
+    branches: [ 'claude/**' ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: emulator-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  device-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build app and test APKs (with emulator ABIs)
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon -Pvidgod.emulator :app:assembleDebug :app:assembleDebugAndroidTest
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Run device tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          cores: 4
+          ram-size: 4096M
+          disk-size: 6G
+          force-avd-creation: true
+          emulator-options: -no-snapshot -no-window -gpu swiftshader_indirect -no-boot-anim -camera-back none -camera-front none
+          disable-animations: true
+          script: bash tools/emulator-tests.sh
+
+      - name: Publish results to the ci-results branch
+        if: always()
+        run: |
+          mkdir -p results
+          echo "${GITHUB_SHA} ${GITHUB_REF_NAME} run ${GITHUB_RUN_NUMBER}" > results/RUN.txt
+          # Keep the branch small: images and text only (videos go to the artifact).
+          rm -rf publish && mkdir publish
+          (cd results && find . -type f ! -name '*.mp4' -exec cp --parents {} ../publish/ \;)
+          cd publish
+          git init -q -b ci-results
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Device test results for ${GITHUB_SHA} (run ${GITHUB_RUN_NUMBER})"
+          git push -q --force "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git" ci-results
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: device-test-results
+          path: results/
