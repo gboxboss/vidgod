@@ -1,0 +1,31 @@
+Performing Streamed Install
+Success
+media id of smoke.mp4: 1000000041
+media id of speech.mp4: 1000000042
+--- home
+PASS home
+--- open_video
+PASS open_video
+--- play
+time 00:00 / 00:04 -> 00:02 / 00:04
+PASS play
+--- add_text
+PASS add_text
+--- play_after_text
+time 00:02 / 00:04 -> 00:04 / 00:04
+PASS play_after_text
+--- export
+exported: VidGod_20261002_191908.mp4
+PASS export
+--- reopen_project
+reopened: 00:00 / 00:04
+PASS reopen_project
+--- auto_captions
+captions: ['CC  the low well they', 'CC  seem a cop show']
+PASS auto_captions
+--- text_to_speech
+PASS text_to_speech
+--- back_home
+PASS back_home
+
+RELEASE SMOKE: PASS

@@ -1,0 +1,96 @@
+== export_all_effects.mp4
+  stream|codec_name=aac|profile=LC|codec_type=audio|sample_rate=44100|channels=2|avg_frame_rate=0/0|nb_frames=602
+  stream|codec_name=h264|profile=Constrained Baseline|codec_type=video|width=480|height=852|avg_frame_rate=30/1|nb_frames=420
+  format|duration=14.000000
+  mean_volume: -91.0 dB
+  max_volume: -91.0 dB
+== export_all_filters.mp4
+  stream|codec_name=aac|profile=LC|codec_type=audio|sample_rate=44100|channels=2|avg_frame_rate=0/0|nb_frames=353
+  stream|codec_name=h264|profile=Constrained Baseline|codec_type=video|width=480|height=852|avg_frame_rate=30/1|nb_frames=246
+  format|duration=8.200000
+  mean_volume: -91.0 dB
+  max_volume: -91.0 dB
+== export_all_transitions.mp4
+  stream|codec_name=aac|profile=LC|codec_type=audio|sample_rate=44100|channels=2|avg_frame_rate=0/0|nb_frames=852
+  stream|codec_name=h264|profile=Constrained Baseline|codec_type=video|width=480|height=852|avg_frame_rate=30/1|nb_frames=594
+  format|duration=19.800000
+  mean_volume: -91.0 dB
+  max_volume: -91.0 dB
+== export_cutouts.mp4
+  stream|codec_name=aac|profile=LC|codec_type=audio|sample_rate=44100|channels=2|avg_frame_rate=0/0|nb_frames=194
+  stream|codec_name=h264|profile=Constrained Baseline|codec_type=video|width=1080|height=1920|avg_frame_rate=30/1|nb_frames=135
+  format|duration=4.500000
+  mean_volume: -24.2 dB
+  max_volume: -19.6 dB
+== export_dissolve.mp4
+  stream|codec_name=aac|profile=LC|codec_type=audio|sample_rate=44100|channels=2|avg_frame_rate=0/0|nb_frames=94
+  stream|codec_name=h264|profile=Constrained Baseline|codec_type=video|width=480|height=852|avg_frame_rate=30/1|nb_frames=66
+  format|duration=2.200000
+  mean_volume: -26.9 dB
+  max_volume: -20.7 dB
+== export_hevc_output.mp4
+  stream|codec_name=aac|profile=LC|codec_type=audio|sample_rate=44100|channels=2|avg_frame_rate=0/0|nb_frames=86
+  stream|codec_name=hevc|profile=Main|codec_type=video|width=270|height=480|avg_frame_rate=30/1|nb_frames=60
+  format|duration=2.000000
+  mean_volume: -91.0 dB
+  max_volume: -91.0 dB
+== export_hevc_source.mp4
+  stream|codec_name=aac|profile=LC|codec_type=audio|sample_rate=44100|channels=2|avg_frame_rate=0/0|nb_frames=86
+  stream|codec_name=h264|profile=Constrained Baseline|codec_type=video|width=1080|height=1920|avg_frame_rate=30/1|nb_frames=60
+  format|duration=2.000000
+  mean_volume: -91.0 dB
+  max_volume: -91.0 dB
+== export_landscape_30.mp4
+  stream|codec_name=aac|profile=LC|codec_type=audio|sample_rate=48000|channels=2|avg_frame_rate=0/0|nb_frames=141
+  stream|codec_name=h264|profile=Constrained Baseline|codec_type=video|width=1080|height=1920|avg_frame_rate=30/1|nb_frames=91
+  format|duration=3.033333
+  mean_volume: -24.2 dB
+  max_volume: -19.9 dB
+== export_landscape_60.mp4
+  stream|codec_name=aac|profile=LC|codec_type=audio|sample_rate=48000|channels=2|avg_frame_rate=0/0|nb_frames=141
+  stream|codec_name=h264|profile=Constrained Baseline|codec_type=video|width=1080|height=1920|avg_frame_rate=60/1|nb_frames=181
+  format|duration=3.016667
+  mean_volume: -24.2 dB
+  max_volume: -19.9 dB
+== export_pip_30.mp4
+  stream|codec_name=aac|profile=LC|codec_type=audio|sample_rate=44100|channels=2|avg_frame_rate=0/0|nb_frames=173
+  stream|codec_name=h264|profile=Constrained Baseline|codec_type=video|width=1080|height=1920|avg_frame_rate=30/1|nb_frames=121
+  format|duration=4.033333
+  mean_volume: -19.8 dB
+  max_volume: -6.2 dB
+== export_pip_60.mp4
+  stream|codec_name=aac|profile=LC|codec_type=audio|sample_rate=44100|channels=2|avg_frame_rate=0/0|nb_frames=173
+  stream|codec_name=h264|profile=Constrained Baseline|codec_type=video|width=1080|height=1920|avg_frame_rate=60/1|nb_frames=241
+  format|duration=4.016667
+  mean_volume: -19.8 dB
+  max_volume: -6.2 dB
+== export_rich.mp4
+  stream|codec_name=aac|profile=LC|codec_type=audio|sample_rate=44100|channels=2|avg_frame_rate=0/0|nb_frames=479
+  stream|codec_name=h264|profile=Constrained Baseline|codec_type=video|width=1080|height=1920|avg_frame_rate=30/1|nb_frames=335
+  format|duration=11.166667
+  mean_volume: -21.2 dB
+  max_volume: -4.8 dB
+== export_rotated.mp4
+  stream|codec_name=aac|profile=LC|codec_type=audio|sample_rate=48000|channels=2|avg_frame_rate=0/0|nb_frames=141
+  stream|codec_name=h264|profile=Constrained Baseline|codec_type=video|width=1080|height=1920|avg_frame_rate=30/1|nb_frames=91
+  format|duration=3.033333
+  mean_volume: -24.1 dB
+  max_volume: -20.3 dB
+== export_single.mp4
+  stream|codec_name=aac|profile=LC|codec_type=audio|sample_rate=44100|channels=2|avg_frame_rate=0/0|nb_frames=173
+  stream|codec_name=h264|profile=Constrained Baseline|codec_type=video|width=1080|height=1920|avg_frame_rate=30/1|nb_frames=121
+  format|duration=4.033333
+  mean_volume: -24.2 dB
+  max_volume: -20.7 dB
+== export_slideshow.mp4
+  stream|codec_name=aac|profile=LC|codec_type=audio|sample_rate=44100|channels=2|avg_frame_rate=0/0|nb_frames=258
+  stream|codec_name=h264|profile=Constrained Baseline|codec_type=video|width=1080|height=1920|avg_frame_rate=30/1|nb_frames=180
+  format|duration=6.000000
+  mean_volume: -91.0 dB
+  max_volume: -91.0 dB
+== reverse_rotated.mp4
+  stream|codec_name=h264|profile=Constrained Baseline|codec_type=video|width=720|height=1280|avg_frame_rate=30/1|nb_frames=90
+  stream|codec_name=aac|profile=LC|codec_type=audio|sample_rate=48000|channels=2|avg_frame_rate=0/0|nb_frames=141
+  format|duration=3.008000
+  mean_volume: -24.2 dB
+  max_volume: -20.3 dB
