@@ -96,7 +96,9 @@ class PreviewController(private val context: Context) {
         override fun onPlayerError(error: PlaybackException) {
             Log.e(TAG, "Preview error", error)
             com.vidgod.editor.data.Diagnostics.log(context, "Preview error: ${error.errorCodeName}", error)
-            _error.value = error.message ?: error.errorCodeName
+            // A timeout (an old internal player that releases slowly) is recovered from below
+            // without bothering the user.
+            if (error.errorCode != PlaybackException.ERROR_CODE_TIMEOUT) _error.value = error.message ?: error.errorCodeName
             playerStale = true
             // Recover: recreate the player with the current project.
             if (errorRetries < 2) {

@@ -106,11 +106,14 @@ class UiFlowTest {
 
     private fun count(tag: String) = compose.onAllNodes(hasTestTag(tag)).fetchSemanticsNodes().size
 
-    /** Closes the open panel (system back) and clears the selection. */
+    /** Closes the open panel and clears the selection (back presses until the main toolbar shows). */
     private fun closePanelAndDeselect() {
-        back()
-        runCatching { tapIcon("Back") }
-        pause(300)
+        val root = hasText("Stickers") and hasClickAction()
+        for (k in 0 until 3) {
+            if (compose.exists(root)) return
+            back()
+        }
+        check(compose.exists(root)) { "Did not get back to the main toolbar" }
     }
 
     /** Finds a file in the system file picker: among the recent files, else in Downloads. */
@@ -130,8 +133,11 @@ class UiFlowTest {
             n.config.getOrNull(SemanticsProperties.Text)?.any { lengthLabel.matches(it.text) } == true
         }).fetchSemanticsNodes().mapNotNull { n -> n.config.getOrNull(SemanticsProperties.Text)?.joinToString { it.text } }
 
-    private fun handleX(tag: String): Float =
-        compose.onAllNodes(hasTestTag(tag)).onFirst().fetchSemanticsNode().boundsInRoot.center.x
+    /** Centre of a handle, also when off screen (boundsInRoot is clipped to the screen). */
+    private fun handleX(tag: String): Float {
+        val n = compose.onAllNodes(hasTestTag(tag)).onFirst().fetchSemanticsNode()
+        return n.positionInRoot.x + n.size.width / 2f
+    }
 
     /**
      * Drags the trim handle [tag] of the selected clip by 40% of the screen width in direction [dir]
@@ -299,6 +305,7 @@ class UiFlowTest {
                 pause(800)
                 val w2 = clipWidth()
                 T.log("pinch zoom: clip width $w0 -> $w1 -> $w2")
+                check(w0 > 0f) { "Bad clip width before zooming ($w0)" }
                 check(w1 > w0 * 1.5f) { "Pinching out did not zoom in ($w0 -> $w1)" }
                 check(w2 < w1 / 1.5f) { "Pinching in did not zoom out ($w1 -> $w2)" }
             }

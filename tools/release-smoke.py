@@ -101,6 +101,31 @@ def tap(text=None, desc=None, timeout=15, contains=False):
     time.sleep(1)
 
 
+def screen_size():
+    m = re.search(r"(\d+)x(\d+)", shell("wm size"))
+    return (int(m.group(1)), int(m.group(2))) if m else (1080, 1920)
+
+
+def tap_scrolling(text, swipe, tries=4):
+    """Taps [text], scrolling with [swipe] (fractions x1, y1, x2, y2 of the screen) until it shows."""
+    w, h = screen_size()
+    for _ in range(tries):
+        p = find(dump(), text)
+        if p:
+            adb("shell", "input", "tap", str(p[0]), str(p[1]))
+            time.sleep(1)
+            return
+        x1, y1, x2, y2 = swipe
+        adb("shell", "input", "swipe", str(int(w * x1)), str(int(h * y1)), str(int(w * x2)), str(int(h * y2)), "400")
+        time.sleep(1)
+    raise RuntimeError(f"not found (after scrolling): {text}")
+
+
+TOOLBAR_LEFT = (0.85, 0.955, 0.25, 0.955)  # the editor's bottom toolbar scrolls sideways
+TOOLBAR_RIGHT = (0.25, 0.955, 0.85, 0.955)
+PANEL_UP = (0.5, 0.92, 0.5, 0.62)  # panel content scrolls up
+
+
 def step(name, fn):
     log(f"--- {name}")
     try:
@@ -202,8 +227,8 @@ def reopen_project():
 
 def captions():
     open_video(speech_id)
-    tap(text="Captions")
-    tap(text="Generate captions")
+    tap_scrolling("Captions", TOOLBAR_LEFT)
+    tap_scrolling("Generate captions", PANEL_UP)
     # The first time, the language model (~40 MB) is downloaded. Done when caption items ("CC ...")
     # show in the timeline or the "Added N captions" message appears.
     busy_words = ("Preparing", "Downloading", "Listening", "Recognising")
@@ -231,13 +256,13 @@ def captions():
 
 
 def text_to_speech():
-    tap(text="Audio")
+    tap_scrolling("Audio", TOOLBAR_RIGHT)
     tap(text="Text to speech")
     tap(text="Type what the voice should say")
     shell("input text Hello%sfrom%sVidGod")
     time.sleep(1)
     hide_keyboard()
-    tap(text="Add voice")
+    tap_scrolling("Add voice", PANEL_UP)
     end = time.time() + 90
     while time.time() < end:
         root = dump()

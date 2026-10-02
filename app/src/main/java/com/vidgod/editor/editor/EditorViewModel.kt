@@ -283,6 +283,8 @@ class EditorViewModel(app: Application, val projectId: String) : AndroidViewMode
             ProjectOps.addAudio(p, src, atUs, kind, 0, src.durationUs.coerceAtMost(maxEnd)).also { added = it.second }.first
         }
         added?.let { select(Selection.Audio(it.id)) }
+        // Back to the timeline, where the new clip shows (selected).
+        if (_panel.value == Panel.AUDIO_MENU) _panel.value = null
     }
 
     /** Uses the audio track of a video file as a separate audio clip. */
