@@ -217,8 +217,9 @@ fun RecordPanel(vm: EditorViewModel, positionUs: Long, close: () -> Unit) {
     var startAt by remember { mutableLongStateOf(0L) }
     var elapsed by remember { mutableLongStateOf(0L) }
     var level by remember { mutableFloatStateOf(0f) }
+    var startAfterGrant by remember { mutableStateOf(false) }
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (!granted) vm.toast("Microphone permission is needed to record")
+        if (granted) startAfterGrant = true else vm.toast("Microphone permission is needed to record")
     }
     DisposableEffect(Unit) { onDispose { recorder.stop()?.delete() } }
     LaunchedEffect(recording) {
@@ -251,6 +252,13 @@ fun RecordPanel(vm: EditorViewModel, positionUs: Long, close: () -> Unit) {
             }
         }
     }
+    // Recording starts as soon as the microphone permission is granted.
+    LaunchedEffect(startAfterGrant) {
+        if (startAfterGrant) {
+            startAfterGrant = false
+            toggle()
+        }
+    }
     Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
         PanelHeader("Voice-over", close)
         Text(
@@ -266,7 +274,8 @@ fun RecordPanel(vm: EditorViewModel, positionUs: Long, close: () -> Unit) {
         }
         Spacer(Modifier.height(16.dp))
         Box(
-            Modifier.size(76.dp).clip(CircleShape).border(4.dp, Color.White, CircleShape).clickable { toggle() },
+            Modifier.size(76.dp).clip(CircleShape).border(4.dp, Color.White, CircleShape)
+                .clickable(onClickLabel = if (recording) "Stop recording" else "Record") { toggle() },
             contentAlignment = Alignment.Center,
         ) {
             Box(
