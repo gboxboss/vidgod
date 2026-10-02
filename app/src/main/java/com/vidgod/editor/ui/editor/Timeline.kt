@@ -55,6 +55,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.ContentScale
@@ -122,7 +123,7 @@ fun Timeline(
     val currentDuration by rememberUpdatedState(duration)
     val fling = remember { Animatable(0f) }
 
-    BoxWithConstraints(modifier.fillMaxWidth().background(VG.Bg)) {
+    BoxWithConstraints(modifier.fillMaxWidth().background(VG.Bg).testTag("timeline")) {
         val widthPx = with(density) { maxWidth.toPx() }
         val half = widthPx / 2f
         val geo = remember(state, position, half) { Geometry(state, position, half) }
@@ -473,7 +474,7 @@ private fun MainTrack(
 ) {
     val density = LocalDensity.current
     val starts = project.clipStarts()
-    Box(Modifier.fillMaxWidth().height(ROW_MAIN + 8.dp).padding(vertical = 4.dp)) {
+    Box(Modifier.fillMaxWidth().height(ROW_MAIN + 8.dp).padding(vertical = 4.dp).testTag("main_track")) {
         Box(
             Modifier.offset { IntOffset((geo.x(0) - 64.dp.toPx()).roundToInt(), 0) }
                 .size(52.dp, ROW_MAIN)

@@ -15,6 +15,11 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.ComposeTestRule
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onFirst
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipe
+import androidx.compose.ui.test.click
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
@@ -109,6 +114,22 @@ class UiFlowTest {
                 val after = timeText()
                 T.log("time before=$before after=$after")
                 check(before != after) { "Playback did not move the playhead ($before -> $after)" }
+            }
+            s.step("scrub_timeline") {
+                val before = timeText()
+                compose.onNodeWithTag("timeline").performTouchInput {
+                    swipe(Offset(centerX + width * 0.3f, centerY), Offset(centerX - width * 0.3f, centerY), 700)
+                }
+                pause(1200)
+                val after = timeText()
+                T.log("scrub before=$before after=$after")
+                check(before != after) { "Dragging the timeline did not move the playhead ($before -> $after)" }
+            }
+            s.step("tap_clip_selects") {
+                compose.onNodeWithTag("main_track").performTouchInput { click(center) }
+                compose.await(hasText("Split"), 5_000)
+                tapIcon("Back")
+                compose.await(hasText("Stickers"), 5_000)
             }
             s.step("select_clip") {
                 tap("Edit")
