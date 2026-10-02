@@ -4,6 +4,7 @@
 Only groups hosted on Google's Maven repository are copied (everything else is
 available from Maven Central). Usage: cache_to_maven.py <files-2.1 dir> <out dir>
 """
+import json
 import os
 import shutil
 import sys
@@ -37,4 +38,31 @@ for group in sorted(os.listdir(src)):
                     os.makedirs(out, exist_ok=True)
                     shutil.copy2(path, os.path.join(out, name))
                     copied += 1
-print(f"copied {copied} files, skipped {skipped}")
+
+
+def fix_module_file_names(root):
+    """Gradle caches files under their module-metadata `name`; Maven layout needs the `url`."""
+    renamed = 0
+    for dirpath, _, files in os.walk(root):
+        for f in files:
+            if not f.endswith(".module"):
+                continue
+            try:
+                with open(os.path.join(dirpath, f)) as fh:
+                    meta = json.load(fh)
+            except (OSError, ValueError):
+                continue
+            for variant in meta.get("variants", []):
+                for entry in variant.get("files", []):
+                    name, url = entry.get("name"), entry.get("url")
+                    if not name or not url or name == url or "/" in url:
+                        continue
+                    src_path = os.path.join(dirpath, name)
+                    dst_path = os.path.join(dirpath, url)
+                    if os.path.exists(src_path) and not os.path.exists(dst_path):
+                        shutil.copy2(src_path, dst_path)
+                        renamed += 1
+    return renamed
+
+
+print(f"copied {copied} files, skipped {skipped}, renamed {fix_module_file_names(dst)}")
