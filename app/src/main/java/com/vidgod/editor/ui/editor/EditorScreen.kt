@@ -136,7 +136,7 @@ fun EditorScreen(projectId: String, initialAction: String?, onBack: () -> Unit) 
     LaunchedEffect(previewError) { previewError?.let { vm.toast("Preview: $it") } }
 
     var pickTarget by remember { mutableStateOf(PickTarget.MAIN) }
-    val visualPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(100)) { uris ->
+    val visualPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(50)) { uris ->
         if (uris.isEmpty()) return@rememberLauncherForActivityResult
         when (pickTarget) {
             PickTarget.MAIN -> vm.importMain(uris)

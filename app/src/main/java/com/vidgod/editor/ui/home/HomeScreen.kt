@@ -136,7 +136,7 @@ fun HomeScreen(openEditor: (String, String?) -> Unit, vm: HomeViewModel = viewMo
     var pendingAction by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) { vm.refresh() }
 
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(100)) { uris ->
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(50)) { uris ->
         if (uris.isNotEmpty()) {
             val action = pendingAction
             scope.launch {
