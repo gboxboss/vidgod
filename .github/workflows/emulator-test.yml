@@ -30,6 +30,12 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
+      - name: Generate a speech sample for the captions test
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq espeak-ng > /dev/null
+          espeak-ng -s 140 -w app/src/androidTest/assets/media/speech.wav "Hello world. This is a caption test."
+          ls -la app/src/androidTest/assets/media/
+
       - name: Build app, test and release APKs (with emulator ABIs)
         run: |
           chmod +x gradlew
@@ -56,7 +62,7 @@ jobs:
           df -h /
 
       - name: Install ffmpeg (checks exported videos)
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg > /dev/null
+        run: sudo apt-get install -y -qq ffmpeg > /dev/null
 
       - name: Enable KVM
         run: |

@@ -15,3 +15,4 @@ output-metadata.json
 *.iml
 .vscode/
 .DS_Store
+app/src/androidTest/assets/media/speech.wav
