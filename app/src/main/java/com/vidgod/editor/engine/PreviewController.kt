@@ -5,6 +5,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.view.Surface
+import android.view.SurfaceHolder
 import android.view.SurfaceView
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.PlaybackException
@@ -128,13 +129,30 @@ class PreviewController(private val context: Context) {
         player?.setVideoSurface(surface, Size(width, height))
     }
 
+    private val redrawAfterSurface = Runnable { redraw() }
+
+    /** A new surface (e.g. back from the background) starts empty: show the paused frame again. */
+    private val surfaceCallback = object : SurfaceHolder.Callback {
+        override fun surfaceCreated(holder: SurfaceHolder) {}
+
+        override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
+            handler.removeCallbacks(redrawAfterSurface)
+            handler.postDelayed(redrawAfterSurface, 150)
+        }
+
+        override fun surfaceDestroyed(holder: SurfaceHolder) {}
+    }
+
     fun attach(view: SurfaceView) {
         surfaces.remove(view)
         surfaces.add(view)
+        view.holder.removeCallback(surfaceCallback)
+        view.holder.addCallback(surfaceCallback)
         player?.setVideoSurfaceView(view)
     }
 
     fun detach(view: SurfaceView) {
+        view.holder.removeCallback(surfaceCallback)
         val wasTop = surfaceView == view
         surfaces.remove(view)
         if (wasTop) {

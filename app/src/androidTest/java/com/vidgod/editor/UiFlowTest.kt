@@ -212,6 +212,15 @@ class UiFlowTest {
                 val t2 = timeText()
                 T.log("after background: $t1 -> $t2")
                 check(t1 == t2) { "The playhead moves while paused ($t1 -> $t2)" }
+                // The preview shows the paused frame again (the surface was recreated).
+                val shot = checkNotNull(T.screenshot("ui_after_background")) { "No screenshot" }
+                val crop = android.graphics.Bitmap.createBitmap(
+                    shot, (shot.width * 0.35f).toInt(), (shot.height * 0.15f).toInt(),
+                    (shot.width * 0.3f).toInt(), (shot.height * 0.25f).toInt(),
+                )
+                val (mean, sd) = Inspect.stats(crop)
+                T.log("preview after background: mean=%.1f sd=%.1f".format(mean, sd))
+                check(sd > 4.0) { "The preview is blank after returning to the app (sd=$sd)" }
             }
             s.step("scrub_timeline") {
                 val before = timeText()
