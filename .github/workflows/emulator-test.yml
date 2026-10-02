@@ -11,9 +11,10 @@ on:
 permissions:
   contents: write
 
+# A new push waits for the running test instead of cancelling it (results of every run matter).
 concurrency:
   group: emulator-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   device-tests:
