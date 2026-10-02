@@ -51,12 +51,15 @@ object AutoCaptions {
 
     private fun modelDir(context: Context, lang: Language) = File(context.filesDir, "vosk/${lang.model}")
 
-    fun isInstalled(context: Context, lang: Language) = File(modelDir(context, lang), "am").exists() ||
-        File(modelDir(context, lang), "conf").exists()
+    /** Written after a model was fully unpacked (an interrupted install must not count). */
+    private fun marker(context: Context, lang: Language) = File(modelDir(context, lang), ".installed")
+
+    fun isInstalled(context: Context, lang: Language) = marker(context, lang).exists()
 
     /** Downloads and unpacks a model. [onProgress] receives 0..1. */
     suspend fun install(context: Context, lang: Language, onProgress: (Float) -> Unit) = withContext(Dispatchers.IO) {
         val root = File(context.filesDir, "vosk").apply { mkdirs() }
+        modelDir(context, lang).deleteRecursively()
         val zip = File(root, lang.model + ".zip")
         val url = URL("https://alphacephei.com/vosk/models/${lang.model}.zip")
         val conn = url.openConnection() as HttpURLConnection
@@ -92,6 +95,10 @@ object AutoCaptions {
             }
         }
         zip.delete()
+        check(File(modelDir(context, lang), "conf").exists() || File(modelDir(context, lang), "am").exists()) {
+            "The downloaded speech model is incomplete. Please try again."
+        }
+        marker(context, lang).writeText("ok")
         onProgress(1f)
     }
 
