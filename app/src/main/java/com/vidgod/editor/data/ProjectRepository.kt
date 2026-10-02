@@ -8,6 +8,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import java.io.File
@@ -74,14 +75,19 @@ class ProjectRepository(private val context: Context) {
         runCatching { json.decodeFromString(Project.serializer(), f.readText()) }.getOrNull()
     }
 
+    /** Saves run one at a time: two writers of the same temporary file could corrupt it. */
+    private val saveLock = kotlinx.coroutines.sync.Mutex()
+
     suspend fun save(project: Project) = withContext(Dispatchers.IO) {
-        val d = dir(project.id).apply { mkdirs() }
-        val tmp = File(d, "project.json.tmp")
-        tmp.writeText(json.encodeToString(Project.serializer(), project))
-        val target = file(project.id)
-        if (!tmp.renameTo(target)) {
-            target.writeText(tmp.readText())
-            tmp.delete()
+        saveLock.withLock {
+            val d = dir(project.id).apply { mkdirs() }
+            val tmp = File(d, "project.json.tmp")
+            tmp.writeText(json.encodeToString(Project.serializer(), project))
+            val target = file(project.id)
+            if (!tmp.renameTo(target)) {
+                target.writeText(tmp.readText())
+                tmp.delete()
+            }
         }
     }
 
