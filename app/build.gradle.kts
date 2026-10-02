@@ -14,8 +14,10 @@ android {
         applicationId = "com.vidgod.editor"
         minSdk = 26
         targetSdk = 36
-        versionCode = (System.getenv("VIDGOD_VERSION_CODE") ?: "1").toInt()
-        versionName = "1.0." + (System.getenv("VIDGOD_VERSION_CODE") ?: "0")
+        // Minutes since 2026-01-01: every newer build (local or CI) can update an older install.
+        val buildMinute = (System.currentTimeMillis() / 60_000L - 29_453_760L).toInt()
+        versionCode = buildMinute
+        versionName = "1.0." + (System.getenv("VIDGOD_VERSION_CODE") ?: buildMinute.toString())
         vectorDrawables.useSupportLibrary = true
     }
 

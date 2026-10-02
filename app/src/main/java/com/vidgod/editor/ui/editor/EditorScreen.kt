@@ -45,6 +45,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.EmojiEmotions
 import androidx.compose.material.icons.filled.FilterVintage
 import androidx.compose.material.icons.filled.Flip
+import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.Gradient
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Layers
@@ -121,6 +122,7 @@ fun EditorScreen(projectId: String, initialAction: String?, onBack: () -> Unit) 
     val canUndo by vm.canUndo.collectAsState()
     val canRedo by vm.canRedo.collectAsState()
     val timeline = remember { TimelineState() }
+    var fullscreen by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
 
     LaunchedEffect(Unit) { vm.messages.collect { snackbar.showSnackbar(it) } }
@@ -200,6 +202,7 @@ fun EditorScreen(projectId: String, initialAction: String?, onBack: () -> Unit) 
                 onUndo = vm::undo,
                 onRedo = vm::redo,
                 onKeyframe = vm::toggleKeyframe,
+                onFullscreen = { fullscreen = true },
             )
             if (panel != null && panel != Panel.EXPORT) {
                 Box(Modifier.fillMaxWidth().height(320.dp).background(VG.Surface)) {
@@ -221,6 +224,9 @@ fun EditorScreen(projectId: String, initialAction: String?, onBack: () -> Unit) 
                 }
                 Toolbar(vm, project, selection, actions)
             }
+        }
+        if (fullscreen) {
+            FullscreenPreview(vm, project, positionState, playing, onClose = { fullscreen = false })
         }
         if (panel == Panel.EXPORT) {
             ExportOverlay(vm, project, onClose = { vm.openPanel(null) })
@@ -295,6 +301,7 @@ private fun ControlsRow(
     onUndo: () -> Unit,
     onRedo: () -> Unit,
     onKeyframe: () -> Unit,
+    onFullscreen: () -> Unit,
 ) {
     Row(
         Modifier.fillMaxWidth().height(44.dp).padding(horizontal = 12.dp),
@@ -311,7 +318,7 @@ private fun ControlsRow(
             Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, "Play", tint = VG.Text, modifier = Modifier.size(30.dp))
         }
         Spacer(Modifier.weight(1f))
-        Row(Modifier.width(110.dp), horizontalArrangement = Arrangement.End) {
+        Row(Modifier.width(150.dp), horizontalArrangement = Arrangement.End) {
             if (keyframeVisible) {
                 IconButton(onClick = onKeyframe) {
                     Icon(Icons.Default.Diamond, "Keyframe", tint = if (keyframeActive) VG.Accent else VG.Text)
@@ -322,6 +329,9 @@ private fun ControlsRow(
             }
             IconButton(onClick = onRedo, enabled = canRedo) {
                 Icon(Icons.AutoMirrored.Filled.Redo, "Redo", tint = if (canRedo) VG.Text else VG.TextDim.copy(alpha = 0.4f))
+            }
+            IconButton(onClick = onFullscreen) {
+                Icon(Icons.Default.Fullscreen, "Full screen", tint = VG.Text)
             }
         }
     }
@@ -443,5 +453,48 @@ private fun Toolbar(vm: EditorViewModel, project: Project, selection: Selection?
             IconButton(onClick = { vm.select(null) }) { Icon(Icons.Default.Close, "Back", tint = VG.TextDim) }
         }
         tools.forEach { t -> ToolButton(t.icon, t.label, t.action, selected = t.selected) }
+    }
+}
+
+
+@Composable
+private fun FullscreenPreview(
+    vm: EditorViewModel,
+    project: Project,
+    position: androidx.compose.runtime.State<Long>,
+    playing: Boolean,
+    onClose: () -> Unit,
+) {
+    BackHandler(onBack = onClose)
+    Box(Modifier.fillMaxSize().background(Color.Black).clickable { vm.preview.togglePlay() }, contentAlignment = Alignment.Center) {
+        androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            val aspect = project.canvasAspect
+            val boxAspect = maxWidth.value / maxHeight.value
+            val (w, h) = if (aspect > boxAspect) maxWidth to maxWidth / aspect else maxHeight * aspect to maxHeight
+            androidx.compose.ui.viewinterop.AndroidView(
+                factory = { ctx -> android.view.SurfaceView(ctx).also { vm.preview.attach(it) } },
+                onRelease = { vm.preview.detach(it) },
+                modifier = Modifier.size(w, h),
+            )
+        }
+        Row(
+            Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding().padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = { vm.preview.togglePlay() }) {
+                Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, "Play", tint = Color.White)
+            }
+            val dur = project.durationUs.coerceAtLeast(1)
+            androidx.compose.material3.Slider(
+                value = (position.value.toFloat() / dur).coerceIn(0f, 1f),
+                onValueChange = { vm.preview.seekTo((it * dur).toLong()) },
+                modifier = Modifier.weight(1f),
+                colors = androidx.compose.material3.SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = VG.Accent),
+            )
+            Text(formatTime(position.value), color = Color.White, fontSize = 12.sp, modifier = Modifier.padding(start = 8.dp))
+        }
+        IconButton(onClick = onClose, modifier = Modifier.align(Alignment.TopStart).statusBarsPadding().padding(8.dp)) {
+            Icon(Icons.Default.Close, "Exit full screen", tint = Color.White)
+        }
     }
 }

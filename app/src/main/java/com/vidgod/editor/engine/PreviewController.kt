@@ -31,7 +31,9 @@ class PreviewController(private val context: Context) {
 
     private var player: CompositionPlayer? = null
     private var playerSequences = 0
-    private var surfaceView: SurfaceView? = null
+    /** Attached views, most recent last (fullscreen preview sits on top of the editor's). */
+    private val surfaces = ArrayList<SurfaceView>()
+    private val surfaceView: SurfaceView? get() = surfaces.lastOrNull()
     private var signature: String? = null
     private var pendingProject: Project? = null
     private var hasComposition = false
@@ -103,14 +105,17 @@ class PreviewController(private val context: Context) {
     }
 
     fun attach(view: SurfaceView) {
-        surfaceView = view
+        surfaces.remove(view)
+        surfaces.add(view)
         player?.setVideoSurfaceView(view)
     }
 
     fun detach(view: SurfaceView) {
-        if (surfaceView == view) {
+        val wasTop = surfaceView == view
+        surfaces.remove(view)
+        if (wasTop) {
             player?.clearVideoSurfaceView(view)
-            surfaceView = null
+            surfaceView?.let { player?.setVideoSurfaceView(it) }
         }
     }
 
