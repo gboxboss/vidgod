@@ -466,22 +466,16 @@ private fun TrimHandle(
     left: Boolean,
     onDrag: (Float, Int) -> Unit,
 ) {
+    // The touch area is twice as wide as the visible handle, extending away from the clip.
     Box(
         Modifier
-            .offset { IntOffset(xLeft().roundToInt(), 0) }
-            .width(HANDLE_W)
+            .offset { IntOffset((xLeft() - if (left) HANDLE_W.toPx() else 0f).roundToInt(), 0) }
+            .width(HANDLE_W * 2)
             .height(height)
             .testTag(if (left) "trim_start" else "trim_end")
             // Above the neighbouring clips (the right handle overlaps the next clip), so the
             // handle, not the next clip, receives the drag.
             .zIndex(2f)
-            .clip(
-                RoundedCornerShape(
-                    topStart = if (left) 6.dp else 0.dp, bottomStart = if (left) 6.dp else 0.dp,
-                    topEnd = if (left) 0.dp else 6.dp, bottomEnd = if (left) 0.dp else 6.dp,
-                ),
-            )
-            .background(Color.White)
             .pointerInput(Unit) {
                 detectDragGestures(
                     onDragStart = { onDrag(0f, 0) },
@@ -492,9 +486,23 @@ private fun TrimHandle(
                     onDrag(drag.x, 1)
                 }
             },
-        contentAlignment = Alignment.Center,
+        contentAlignment = if (left) Alignment.CenterEnd else Alignment.CenterStart,
     ) {
-        Box(Modifier.width(2.dp).height(height / 3).background(Color.Black.copy(alpha = 0.6f)))
+        Box(
+            Modifier
+                .width(HANDLE_W)
+                .fillMaxHeight()
+                .clip(
+                    RoundedCornerShape(
+                        topStart = if (left) 6.dp else 0.dp, bottomStart = if (left) 6.dp else 0.dp,
+                        topEnd = if (left) 0.dp else 6.dp, bottomEnd = if (left) 0.dp else 6.dp,
+                    ),
+                )
+                .background(Color.White),
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(Modifier.width(2.dp).height(height / 3).background(Color.Black.copy(alpha = 0.6f)))
+        }
     }
 }
 
