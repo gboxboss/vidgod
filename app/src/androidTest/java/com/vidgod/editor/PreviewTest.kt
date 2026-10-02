@@ -174,8 +174,10 @@ class PreviewTest {
         awaitPlaying()
         withTimeout(45_000) { while (preview.positionUs.value < p.durationUs - 100_000 || preview.isPlaying.value) delay(100) }
         T.log("pip reached end: ${preview.positionUs.value} / ${p.durationUs}")
-        // Replay from the start.
-        assertTrue("replay after end did not advance", playFor(1500) > 500_000)
+        // Play at the end replays from the start.
+        playFor(1500)
+        val replayed = preview.positionUs.value
+        assertTrue("replay after end did not restart and advance ($replayed)", replayed in 300_000..p.durationUs - 300_000)
         assertNull(preview.error.value)
         assertShows("preview_pip_replay")
         // Remove the overlay: the preview must keep working.

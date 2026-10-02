@@ -8,9 +8,12 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.hasAnyChild
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasParent
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.ComposeTestRule
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
@@ -100,6 +103,57 @@ class UiFlowTest {
         return before to after
     }
 
+    private fun count(tag: String) = compose.onAllNodes(hasTestTag(tag)).fetchSemanticsNodes().size
+
+    /** Closes the open panel (system back) and clears the selection. */
+    private fun closePanelAndDeselect() {
+        back()
+        runCatching { tapIcon("Back") }
+        pause(300)
+    }
+
+    /** Finds a file in the system file picker: among the recent files, else in Downloads. */
+    private fun findInFilePicker(namePart: String): androidx.test.uiautomator.UiObject2? {
+        device.wait(Until.findObject(By.textContains(namePart)), 6_000)?.let { return it }
+        device.findObject(By.desc("Show roots"))?.click()
+        Thread.sleep(1000)
+        device.wait(Until.findObject(By.text("Downloads")), 3_000)?.click()
+        return device.wait(Until.findObject(By.textContains(namePart)), 8_000)
+    }
+
+    private val lengthLabel = Regex("^\\d\\d:\\d\\d\\.\\d$")
+
+    /** The length labels ("00:04.0") of the clips shown in the timeline. */
+    private fun clipLengths(): List<String> =
+        compose.onAllNodes(SemanticsMatcher("clip length") { n ->
+            n.config.getOrNull(SemanticsProperties.Text)?.any { lengthLabel.matches(it.text) } == true
+        }).fetchSemanticsNodes().mapNotNull { n -> n.config.getOrNull(SemanticsProperties.Text)?.joinToString { it.text } }
+
+    private fun handleX(tag: String): Float =
+        compose.onAllNodes(hasTestTag(tag)).onFirst().fetchSemanticsNode().boundsInRoot.center.x
+
+    /**
+     * Drags the trim handle [tag] of the selected clip by 20 steps of [stepPx] (slowly and slightly
+     * wobbly, like a finger), checks that the clip length changed, and undoes the trim.
+     */
+    private fun dragHandle(tag: String, stepPx: Float) {
+        val before = clipLengths()
+        val total = timeText().substringAfter(" / ")
+        compose.onAllNodes(hasTestTag(tag)).onFirst().performTouchInput {
+            down(center)
+            for (k in 1..20) moveBy(Offset(stepPx, if (k % 2 == 0) 2f else -2f), 16)
+            up()
+        }
+        pause(1500)
+        val after = clipLengths()
+        T.log("$tag: clip lengths $before -> $after, total $total -> ${timeText().substringAfter(" / ")}")
+        T.screenshot("ui_${tag}_dragged")
+        check(before != after) { "Dragging $tag did not change the clip length ($before -> $after)" }
+        tapIcon("Undo")
+        pause(800)
+        check(clipLengths() == before) { "Undo did not restore the clip length (${clipLengths()} instead of $before)" }
+    }
+
     private fun timeText(): String =
         compose.onAllNodes(hasText(" / ", substring = true)).fetchSemanticsNodes()
             .firstOrNull()?.config?.getOrNull(SemanticsProperties.Text)?.joinToString { it.text }.orEmpty()
@@ -124,6 +178,7 @@ class UiFlowTest {
     @Test
     fun editorFlow() {
         val s = Steps("ui")
+        addToMediaStore("music.m4a", "audio/mp4")
         ActivityScenario.launch<MainActivity>(shareIntent("portrait.mp4", "rotated.mp4", "photo.jpg")).use {
             s.step("open_editor") {
                 compose.await(hasText("Export") and hasClickAction(), 40_000)
@@ -169,20 +224,23 @@ class UiFlowTest {
                 tap("Edit")
                 compose.await(hasText("Split"), 5_000)
             }
+            s.step("trim_clip_start") {
+                // The playhead is at the start of the selected clip, so its left handle is on screen.
+                dragHandle("trim_start", 15f)
+            }
             s.step("trim_clip_end") {
-                val before = timeText().substringAfter(" / ")
-                compose.onAllNodes(androidx.compose.ui.test.hasTestTag("trim_end")).onFirst().performTouchInput {
-                    // A slow, slightly wobbly drag, like a finger.
-                    down(center)
-                    for (k in 1..12) moveBy(Offset(-15f, if (k % 2 == 0) 2f else -2f), 16)
-                    up()
+                // The end of the clip is off screen: scroll the timeline until its handle shows.
+                val screenW = device.displayWidth
+                for (k in 0 until 8) {
+                    if (handleX("trim_end") < screenW * 0.8f) break
+                    compose.onNodeWithTag("timeline").performTouchInput {
+                        swipe(Offset(width * 0.75f, centerY), Offset(width * 0.4f, centerY), 400)
+                    }
+                    pause(700)
                 }
-                pause(1500)
-                val after = timeText().substringAfter(" / ")
-                T.log("trim total before=$before after=$after")
-                check(before != after) { "Dragging the trim handle did not change the length ($before -> $after)" }
-                tapIcon("Undo")
-                pause(800)
+                val x = handleX("trim_end")
+                check(x in 0f..screenW * 0.8f) { "The end of the clip did not scroll into view (handle at $x of $screenW)" }
+                dragHandle("trim_end", -15f)
             }
             for (tool in listOf("Speed", "Volume", "Animation", "Filters", "Adjust", "Effects", "Transform", "Opacity", "Mask", "Chroma key", "Voice FX", "Transition")) {
                 s.step("clip_$tool") {
@@ -224,6 +282,29 @@ class UiFlowTest {
             s.step("deselect_sticker") {
                 runCatching { tapIcon("Back") }
                 compose.await(hasText("Effects") and hasClickAction(), 5_000)
+            }
+            s.step("add_sound_effect") {
+                val before = count("item_audio")
+                tap("Audio")
+                tap("Whoosh")
+                compose.waitUntil(10_000) { count("item_audio") > before }
+                pause(800)
+                closePanelAndDeselect()
+            }
+            s.step("add_music_from_files") {
+                val before = count("item_audio")
+                tap("Audio")
+                tap("Music")
+                pause(2500)
+                check(device.currentPackageName != T.app.packageName) { "The file picker did not open" }
+                val file = findInFilePicker("vidgodtest_music")
+                T.screenshot("ui_music_picker")
+                if (file == null) runCatching { device.dumpWindowHierarchy(File(T.out, "ui_music_picker.xml")) }
+                checkNotNull(file) { "The music file is not listed in the file picker" }.click()
+                compose.waitUntil(20_000) { count("item_audio") > before }
+                pause(1000)
+                T.screenshot("ui_music_added")
+                closePanelAndDeselect()
             }
             for (tool in listOf("Styles", "Audio", "Effects", "Filters", "Captions", "Ratio", "Canvas", "Reorder")) {
                 s.step("panel_$tool") {
@@ -279,6 +360,39 @@ class UiFlowTest {
                 compose.await(hasText("New project"), 10_000)
                 pause(1500)
             }
+            s.step("reopen_project") {
+                // The most recent project is first: the one just edited.
+                compose.onAllNodes(hasClickAction() and hasAnyChild(hasContentDescription("More"))).onFirst().performClick()
+                compose.await(hasText("Export") and hasClickAction(), 30_000)
+                pause(2500)
+                val total = timeText()
+                T.log("reopened project: $total")
+                check(total.isNotEmpty() && !total.endsWith("00:00")) { "The reopened project is empty ($total)" }
+                back()
+                repeat(2) { if (!compose.exists(hasText("New project"))) back() }
+                compose.await(hasText("New project"), 10_000)
+                pause(1000)
+            }
+            s.step("duplicate_rename_delete_project") {
+                tapIcon("More")
+                tap("Duplicate")
+                val copy = hasText(" copy", substring = true)
+                compose.await(copy, 10_000)
+                // Rename the copy.
+                compose.onAllNodes(hasContentDescription("More") and hasParent(copy)).onFirst().performClick()
+                tap("Rename")
+                compose.await(hasSetTextAction(), 5_000)
+                compose.onAllNodes(hasSetTextAction()).onFirst().performTextReplacement("Renamed by test")
+                tap("Save")
+                compose.await(hasText("Renamed by test", substring = true), 10_000)
+                T.screenshot("ui_home_renamed")
+                // Delete it.
+                compose.onAllNodes(hasContentDescription("More") and hasParent(hasText("Renamed by test", substring = true))).onFirst().performClick()
+                tap("Delete")
+                tap("Delete")
+                compose.waitUntil(10_000) { !compose.exists(hasText("Renamed by test", substring = true)) }
+                pause(800)
+            }
             dumpDiagnostics("ui")
         }
         s.assertAllPassed()
@@ -286,13 +400,16 @@ class UiFlowTest {
 
     private fun addToMediaStore(name: String, mime: String) {
         if (Build.VERSION.SDK_INT < 29) return
-        val video = mime.startsWith("video")
-        val collection = if (video) MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-        else MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+        val (collection, folder) = when {
+            mime.startsWith("video") -> MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY) to "Movies/VidGodTest"
+            mime.startsWith("image") -> MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY) to "Pictures/VidGodTest"
+            // Audio goes to Downloads, which the system file picker lists.
+            else -> MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY) to "Download"
+        }
         val values = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, "vidgodtest_$name")
             put(MediaStore.MediaColumns.MIME_TYPE, mime)
-            put(MediaStore.MediaColumns.RELATIVE_PATH, (if (video) "Movies" else "Pictures") + "/VidGodTest")
+            put(MediaStore.MediaColumns.RELATIVE_PATH, folder)
             put(MediaStore.MediaColumns.IS_PENDING, 1)
         }
         val r = T.app.contentResolver

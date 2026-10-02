@@ -421,6 +421,15 @@ private fun BoxScope.TimedItem(
             .clip(RoundedCornerShape(6.dp))
             .background(color.copy(alpha = if (selected) 1f else 0.82f))
             .border(if (selected) 2.dp else 0.dp, if (selected) Color.White else Color.Transparent, RoundedCornerShape(6.dp))
+            .testTag(
+                when (sel) {
+                    is Selection.Audio -> "item_audio"
+                    is Selection.Text -> "item_text"
+                    is Selection.Sticker -> "item_sticker"
+                    is Selection.Overlay -> "item_overlay"
+                    else -> "item_other"
+                },
+            )
             .pointerInput(sel) {
                 detectTapGestures(onTap = { vm.select(if (vm.selection.value == sel) null else sel) })
             }

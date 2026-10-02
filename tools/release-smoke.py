@@ -157,12 +157,15 @@ def open_video():
 
 def play():
     before = time_text()
-    tap(desc="Play")
-    time.sleep(2.5)
-    p = find(dump(), desc="Pause")
-    if p:
-        adb("shell", "input", "tap", str(p[0]), str(p[1]))
-        time.sleep(1)
+    p = wait_for(desc="Play", timeout=15)
+    if not p:
+        raise RuntimeError("no Play button")
+    # Pause by tapping the same button again (it turns into Pause). No UI dump in between: dumps
+    # wait for the UI to be idle, which takes seconds while the video plays.
+    adb("shell", "input", "tap", str(p[0]), str(p[1]))
+    time.sleep(2)
+    adb("shell", "input", "tap", str(p[0]), str(p[1]))
+    time.sleep(1)
     after = time_text()
     log(f"time {before} -> {after}")
     if before == after:
