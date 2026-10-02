@@ -49,6 +49,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.first
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -239,9 +241,21 @@ fun Timeline(
             }
         }
 
+        // Keep the main track in view when lanes (texts, stickers, overlays…) stack above it.
+        val lanesScroll = rememberScrollState()
+        val lanesAbove = (ROW_OVERLAY + ROW_GAP) * project.overlays.map { it.layer }.distinct().size +
+            (ROW_SMALL + ROW_GAP) * (project.texts.map { it.lane }.distinct().size + project.stickers.map { it.lane }.distinct().size +
+                project.effects.map { it.lane }.distinct().size + project.filters.map { it.lane }.distinct().size)
+        LaunchedEffect(lanesAbove) {
+            val target = with(density) { (lanesAbove - ROW_SMALL).toPx() }.roundToInt()
+            if (target <= 0) return@LaunchedEffect
+            snapshotFlow { lanesScroll.maxValue }.first { it > 0 }
+            lanesScroll.animateScrollTo(target.coerceAtMost(lanesScroll.maxValue))
+        }
+
         Column(Modifier.fillMaxWidth().then(gestureModifier)) {
             Ruler(state, geo, duration)
-            Box(Modifier.fillMaxWidth().weight(1f, fill = false).verticalScroll(rememberScrollState())) {
+            Box(Modifier.fillMaxWidth().weight(1f, fill = false).verticalScroll(lanesScroll)) {
                 Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
                     project.overlays.map { it.layer }.distinct().sortedDescending().forEach { layer ->
                         Lane(ROW_OVERLAY) {
