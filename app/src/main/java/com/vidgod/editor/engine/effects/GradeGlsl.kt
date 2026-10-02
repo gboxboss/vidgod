@@ -18,8 +18,8 @@ vec3 grade(vec3 c, vec4 p0, vec4 p1, vec4 p2, vec4 p3, vec4 p4, vec4 p5, vec4 p6
   c = (c - 0.5) * max(0.0, 1.0 + p0.z) + 0.5;
   // highlights & shadows
   float l = luma(clamp(c, 0.0, 1.0));
-  float sh = 1.0 - smoothstep(0.0, 0.55, l);
-  float hi = smoothstep(0.45, 1.0, l);
+  float sh = 1.0 - sstep(0.0, 0.55, l);
+  float hi = sstep(0.45, 1.0, l);
   c += vec3(p2.y * 0.25 * sh);
   c += vec3(p2.x * 0.25 * hi);
   // temperature & tint
@@ -46,13 +46,13 @@ vec3 grade(vec3 c, vec4 p0, vec4 p1, vec4 p2, vec4 p3, vec4 p4, vec4 p5, vec4 p6
     float lt = luma(clamp(c, 0.0, 1.0));
     vec3 teal = vec3(0.0, 0.5, 0.55);
     vec3 orange = vec3(1.0, 0.6, 0.3);
-    vec3 target = mix(teal, orange, smoothstep(0.2, 0.8, lt));
+    vec3 target = mix(teal, orange, sstep(0.2, 0.8, lt));
     c = mix(c, overlayBlend(clamp(c, 0.0, 1.0), target), p6.w * 0.5);
   }
   // split toning
   l = luma(clamp(c, 0.0, 1.0));
-  c = mix(c, overlayBlend(clamp(c, 0.0, 1.0), p4.rgb), p4.a * (1.0 - smoothstep(0.0, 0.6, l)));
-  c = mix(c, overlayBlend(clamp(c, 0.0, 1.0), p5.rgb), p5.a * smoothstep(0.4, 1.0, l));
+  c = mix(c, overlayBlend(clamp(c, 0.0, 1.0), p4.rgb), p4.a * (1.0 - sstep(0.0, 0.6, l)));
+  c = mix(c, overlayBlend(clamp(c, 0.0, 1.0), p5.rgb), p5.a * sstep(0.4, 1.0, l));
   // per channel gamma
   c = pow(clamp(c, 0.0, 1.0), vec3(1.0) / max(p6.rgb, vec3(0.01)));
   // monochrome & sepia
@@ -65,7 +65,7 @@ vec3 grade(vec3 c, vec4 p0, vec4 p1, vec4 p2, vec4 p3, vec4 p4, vec4 p5, vec4 p6
   // vignette
   vec2 d = (uv - 0.5) * vec2(res.x / max(res.y, 1.0), 1.0);
   float dist = length(d) / length(vec2(res.x / max(res.y, 1.0), 1.0) * 0.5);
-  c *= 1.0 - clamp(p2.w, -1.0, 1.0) * smoothstep(0.35, 1.05, dist);
+  c *= 1.0 - clamp(p2.w, -1.0, 1.0) * sstep(0.35, 1.05, dist);
   // film grain
   if (p3.x > 0.001) {
     float n = hash12(uv * res + vec2(seed * 61.0, seed * 37.0)) - 0.5;

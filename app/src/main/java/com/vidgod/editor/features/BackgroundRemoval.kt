@@ -145,7 +145,7 @@ uniform float uHasMask;
 void main() {
   vec4 c = texture2D(uTex, vUv);
   float m = uHasMask > 0.5 ? texture2D(uMask, vec2(vUv.x, 1.0 - vUv.y)).r : 1.0;
-  m = smoothstep(0.3, 0.7, m);
+  m = sstep(0.3, 0.7, m);
   gl_FragColor = vec4(c.rgb, c.a * m);
 }
 """

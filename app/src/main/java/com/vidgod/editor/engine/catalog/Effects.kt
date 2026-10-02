@@ -94,7 +94,7 @@ vec4 fx(vec2 uv) {
 vec4 fx(vec2 uv) {
   vec2 d = (uv - 0.5) * vec2(aspect(), 1.0);
   float r = 0.45 + 0.1 * sin(uTime * uSpeed * 3.0);
-  float v = smoothstep(r, r - 0.35, length(d));
+  float v = sstep(r, r - 0.35, length(d));
   vec4 c = src(uv);
   return vec4(c.rgb * mix(1.0, v, uIntensity), c.a);
 }""", 0xFF5D4037),
@@ -119,6 +119,24 @@ vec4 fx(vec2 uv) {
   vec4 c = src(uv);
   return vec4(mix(c.rgb, vec3(1.0), uProgress * uIntensity), c.a);
 }""", 0xFFFAFAFA),
+        FxDef("beauty", "Smooth skin", "Basic", """
+vec4 fx(vec2 uv) {
+  vec4 c = src(uv);
+  vec3 acc = vec3(0.0);
+  float wsum = 0.0;
+  for (int x = -3; x <= 3; x++) {
+    for (int y = -3; y <= 3; y++) {
+      vec3 s = src(uv + vec2(float(x), float(y)) * 1.6 / uRes).rgb;
+      float w = exp(-dot(s - c.rgb, s - c.rgb) * 60.0) * exp(-float(x * x + y * y) / 18.0);
+      acc += s * w;
+      wsum += w;
+    }
+  }
+  vec3 smoothed = acc / max(wsum, 0.0001);
+  vec3 outc = mix(c.rgb, smoothed, 0.85 * uIntensity);
+  outc = mix(outc, outc * 1.05 + 0.02, 0.5 * uIntensity);
+  return vec4(clamp(outc, 0.0, 1.0), c.a);
+}""", 0xFFFFCDD2),
         // ---------- Retro ----------
         FxDef("glitch", "Glitch", "Retro", """
 vec4 fx(vec2 uv) {
@@ -145,7 +163,7 @@ vec4 fx(vec2 uv) {
   float noiseLine = step(0.995, hash12(vec2(floor(uv.y * 200.0), floor(t * 20.0))));
   vec3 col = c.rgb * mix(1.0, scan, uIntensity) + noiseLine * 0.3 * uIntensity;
   col += (hash12(uv * uRes + t) - 0.5) * 0.08 * uIntensity;
-  float tracking = smoothstep(0.02, 0.0, abs(fract(uv.y - t * 0.15) - 0.5)) * 0.25 * uIntensity;
+  float tracking = sstep(0.02, 0.0, abs(fract(uv.y - t * 0.15) - 0.5)) * 0.25 * uIntensity;
   return vec4(col + tracking, c.a);
 }""", 0xFF5C6BC0),
         FxDef("old_film", "Old film", "Retro", """
@@ -159,7 +177,7 @@ vec4 fx(vec2 uv) {
   float scratch = step(0.997, hash12(vec2(floor(uv.x * 300.0), floor(t * 8.0)))) * 0.5;
   float grain = (hash12(uv * uRes + t * 100.0) - 0.5) * 0.15;
   vec2 d = (uv - 0.5) * vec2(aspect(), 1.0);
-  float vig = smoothstep(0.9, 0.3, length(d));
+  float vig = sstep(0.9, 0.3, length(d));
   vec3 col = (sep * flicker + grain + scratch) * vig;
   return vec4(mix(c.rgb, col, uIntensity), c.a);
 }""", 0xFFA1887F),
@@ -211,8 +229,8 @@ vec4 fx(vec2 uv) {
   float t = uTime * uSpeed * 0.4;
   vec2 p1 = vec2(0.15 + 0.3 * sin(t), 0.8);
   vec2 p2 = vec2(0.9, 0.2 + 0.3 * cos(t * 1.3));
-  float l1 = smoothstep(0.7, 0.0, distance(uv, p1));
-  float l2 = smoothstep(0.6, 0.0, distance(uv, p2));
+  float l1 = sstep(0.7, 0.0, distance(uv, p1));
+  float l2 = sstep(0.6, 0.0, distance(uv, p2));
   vec3 leak = vec3(1.0, 0.45, 0.15) * l1 + vec3(1.0, 0.2, 0.5) * l2;
   vec4 c = src(uv);
   return vec4(1.0 - (1.0 - c.rgb) * (1.0 - leak * 0.8 * uIntensity), c.a);
@@ -226,7 +244,7 @@ vec4 fx(vec2 uv) {
     float fi = float(i);
     vec2 center = vec2(hash12(vec2(fi, 1.0)) * aspect(), fract(hash12(vec2(fi, 2.0)) + uTime * uSpeed * 0.03 * (0.5 + hash12(vec2(fi, 3.0)))));
     float r = 0.04 + 0.06 * hash12(vec2(fi, 4.0));
-    float d = smoothstep(r, r * 0.8, distance(p, center));
+    float d = sstep(r, r * 0.8, distance(p, center));
     vec3 col = hsv2rgb(vec3(hash12(vec2(fi, 5.0)), 0.5, 1.0));
     acc += col * d * 0.35;
   }
@@ -242,7 +260,7 @@ vec4 fx(vec2 uv) {
   float tw = pow(max(0.0, sin(uTime * uSpeed * 4.0 + rnd * 40.0)), 12.0);
   vec2 o = vec2(hash12(id + 1.7), hash12(id + 3.1)) - 0.5;
   vec2 q = f - o * 0.6;
-  float star = max(0.0, 1.0 - abs(q.x * q.y) * 300.0) * smoothstep(0.35, 0.0, length(q));
+  float star = max(0.0, 1.0 - abs(q.x * q.y) * 300.0) * sstep(0.35, 0.0, length(q));
   float s = star * tw * step(0.7, rnd);
   return vec4(c.rgb + s * 1.5 * uIntensity, c.a);
 }""", 0xFFFFF176),
@@ -260,7 +278,7 @@ vec4 fx(vec2 uv) {
     vec2 f = fract(p) - 0.5;
     float r = hash12(id + fl * 10.0);
     vec2 o = vec2(hash12(id + 5.0), hash12(id + 9.0)) - 0.5;
-    float flake = smoothstep(0.12 - fl * 0.02, 0.0, length(f - o * 0.6)) * step(0.6, r);
+    float flake = sstep(0.12 - fl * 0.02, 0.0, length(f - o * 0.6)) * step(0.6, r);
     acc += flake;
   }
   return vec4(mix(c.rgb, vec3(1.0), clamp(acc, 0.0, 1.0) * uIntensity), c.a);
@@ -273,7 +291,7 @@ vec4 fx(vec2 uv) {
   vec2 id = floor(p);
   float r = hash12(vec2(id.x, 0.0));
   float y = fract(p.y + r * 10.0);
-  float drop = smoothstep(0.0, 0.2, y) * smoothstep(0.5, 0.2, y) * smoothstep(0.08, 0.0, abs(fract(p.x) - 0.5)) * step(0.7, r);
+  float drop = sstep(0.0, 0.2, y) * sstep(0.5, 0.2, y) * sstep(0.08, 0.0, abs(fract(p.x) - 0.5)) * step(0.7, r);
   return vec4(c.rgb * (1.0 - 0.15 * uIntensity) + drop * 0.5 * uIntensity, c.a);
 }""", 0xFF78909C),
         FxDef("stars", "Starry", "Dreamy", """
@@ -283,7 +301,7 @@ vec4 fx(vec2 uv) {
   vec2 id = floor(g);
   float r = hash12(id);
   float tw = 0.5 + 0.5 * sin(uTime * uSpeed * 3.0 + r * 60.0);
-  float d = smoothstep(0.08, 0.0, length(fract(g) - 0.5)) * step(0.92, r) * tw;
+  float d = sstep(0.08, 0.0, length(fract(g) - 0.5)) * step(0.92, r) * tw;
   return vec4(c.rgb + d * uIntensity, c.a);
 }""", 0xFF283593),
         FxDef("rainbow", "Rainbow", "Dreamy", """
@@ -316,7 +334,7 @@ vec4 fx(vec2 uv) {
 vec4 fx(vec2 uv) {
   vec2 d = (uv - 0.5) * vec2(aspect(), 1.0);
   float r = length(d);
-  float k = smoothstep(0.5, 0.0, r) * 0.5 * uIntensity * (0.8 + 0.2 * sin(uTime * uSpeed * 3.0));
+  float k = sstep(0.5, 0.0, r) * 0.5 * uIntensity * (0.8 + 0.2 * sin(uTime * uSpeed * 3.0));
   vec2 u = d * (1.0 - k) / vec2(aspect(), 1.0) + 0.5;
   return src(u);
 }""", 0xFF29B6F6),
@@ -324,7 +342,7 @@ vec4 fx(vec2 uv) {
 vec4 fx(vec2 uv) {
   vec2 d = (uv - 0.5) * vec2(aspect(), 1.0);
   float r = length(d);
-  float k = smoothstep(0.5, 0.0, r) * 0.6 * uIntensity;
+  float k = sstep(0.5, 0.0, r) * 0.6 * uIntensity;
   vec2 u = d * (1.0 + k) / vec2(aspect(), 1.0) + 0.5;
   return src(u);
 }""", 0xFF0097A7),
@@ -404,7 +422,7 @@ vec4 fx(vec2 uv) {
 }""", 0xFF8BC34A),
         FxDef("tilt_shift", "Miniature", "Lens", """
 vec4 fx(vec2 uv) {
-  float b = smoothstep(0.1, 0.4, abs(uv.y - 0.5)) * 8.0 * uIntensity;
+  float b = sstep(0.1, 0.4, abs(uv.y - 0.5)) * 8.0 * uIntensity;
   vec4 acc = vec4(0.0);
   for (int x = -2; x <= 2; x++) {
     for (int y = -2; y <= 2; y++) {
@@ -458,7 +476,7 @@ vec4 fx(vec2 uv) {
   vec2 p = uv * vec2(aspect(), 1.0) * s;
   vec2 cell = fract(p) - 0.5;
   float l = luma(src((floor(p) + 0.5) / (vec2(aspect(), 1.0) * s)).rgb);
-  float dotv = smoothstep(0.5 * (1.0 - l) + 0.05, 0.5 * (1.0 - l), length(cell));
+  float dotv = sstep(0.5 * (1.0 - l) + 0.05, 0.5 * (1.0 - l), length(cell));
   vec3 col = vec3(1.0 - dotv);
   return vec4(mix(c.rgb, col, uIntensity), c.a);
 }""", 0xFF616161),
@@ -481,7 +499,7 @@ vec4 fx(vec2 uv) {
   float l = luma(c.rgb) * 1.6;
   float n = hash12(uv * uRes + uTime * 50.0) * 0.15;
   vec2 d = (uv - 0.5) * vec2(aspect(), 1.0);
-  float vig = smoothstep(0.8, 0.3, length(d));
+  float vig = sstep(0.8, 0.3, length(d));
   vec3 col = vec3(0.1, 1.0, 0.2) * (l + n) * vig * (0.9 + 0.1 * sin(uv.y * uRes.y));
   return vec4(mix(c.rgb, col, uIntensity), c.a);
 }""", 0xFF00C853),
@@ -497,7 +515,7 @@ vec4 fx(vec2 uv) {
         FxDef("letterbox", "Cinema bars", "Frame", """
 vec4 fx(vec2 uv) {
   vec4 c = src(uv);
-  float bar = 0.12 * uIntensity * smoothstep(0.0, 0.15, uProgress) ;
+  float bar = 0.12 * uIntensity * sstep(0.0, 0.15, uProgress) ;
   float m = step(bar, uv.y) * step(uv.y, 1.0 - bar);
   return vec4(c.rgb * m, c.a);
 }""", 0xFF000000),
@@ -505,7 +523,7 @@ vec4 fx(vec2 uv) {
 vec4 fx(vec2 uv) {
   vec4 c = src(uv);
   vec2 d = abs(uv - 0.5) * 2.0;
-  float m = smoothstep(1.0, 0.75, max(d.x, d.y));
+  float m = sstep(1.0, 0.75, max(d.x, d.y));
   vec4 acc = vec4(0.0);
   for (int x = -2; x <= 2; x++) {
     for (int y = -2; y <= 2; y++) {

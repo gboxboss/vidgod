@@ -17,7 +17,7 @@ bool inside01(vec2 uv) { return uv.x >= 0.0 && uv.x <= 1.0 && uv.y >= 0.0 && uv.
     private fun push(dx: String, dy: String) = """
 vec4 transition(vec2 uv) {
   vec2 dir = vec2($dx, $dy);
-  float p = smoothstep(0.0, 1.0, progress);
+  float p = sstep(0.0, 1.0, progress);
   vec2 fromUv = uv + dir * p;
   vec2 toUv = uv + dir * (p - 1.0);
   if (inside01(toUv)) return getToColor(toUv);
@@ -27,7 +27,7 @@ vec4 transition(vec2 uv) {
     private fun slide(dx: String, dy: String) = """
 vec4 transition(vec2 uv) {
   vec2 dir = vec2($dx, $dy);
-  float p = smoothstep(0.0, 1.0, progress);
+  float p = sstep(0.0, 1.0, progress);
   vec2 toUv = uv + dir * (p - 1.0);
   if (inside01(toUv)) return getToColor(toUv);
   return getFromColor(uv) * (1.0 - 0.4 * p);
@@ -37,7 +37,7 @@ vec4 transition(vec2 uv) {
 vec4 transition(vec2 uv) {
   float edge = 0.08;
   float x = $expr;
-  float m = smoothstep(progress * (1.0 + edge) - edge, progress * (1.0 + edge), x);
+  float m = sstep(progress * (1.0 + edge) - edge, progress * (1.0 + edge), x);
   return mix(getToColor(uv), getFromColor(uv), m);
 }"""
 
@@ -69,21 +69,21 @@ vec4 transition(vec2 uv) {
 vec4 transition(vec2 uv) {
   vec2 d = (uv - 0.5) * vec2(ratio, 1.0);
   float r = progress * length(vec2(ratio, 1.0)) * 0.55;
-  float m = 1.0 - smoothstep(r - 0.02, r + 0.02, length(d));
+  float m = 1.0 - sstep(r - 0.02, r + 0.02, length(d));
   return mix(getFromColor(uv), getToColor(uv), m);
 }"""),
         TransitionDef("circle_close", "Circle close", "Shape", """
 vec4 transition(vec2 uv) {
   vec2 d = (uv - 0.5) * vec2(ratio, 1.0);
   float r = (1.0 - progress) * length(vec2(ratio, 1.0)) * 0.55;
-  float m = 1.0 - smoothstep(r - 0.02, r + 0.02, length(d));
+  float m = 1.0 - sstep(r - 0.02, r + 0.02, length(d));
   return mix(getToColor(uv), getFromColor(uv), m);
 }"""),
         TransitionDef("diamond", "Diamond", "Shape", """
 vec4 transition(vec2 uv) {
   vec2 d = abs(uv - 0.5) * vec2(ratio, 1.0);
   float r = progress * (ratio + 1.0) * 0.55;
-  float m = 1.0 - smoothstep(r - 0.02, r + 0.02, d.x + d.y);
+  float m = 1.0 - sstep(r - 0.02, r + 0.02, d.x + d.y);
   return mix(getFromColor(uv), getToColor(uv), m);
 }"""),
         TransitionDef("heart", "Heart", "Shape", """
@@ -98,7 +98,7 @@ float heartSdf(vec2 p) {
 }
 vec4 transition(vec2 uv) {
   vec2 p = (uv - 0.5) * vec2(ratio, 1.0) / max(progress * 2.2, 0.0001);
-  float m = 1.0 - smoothstep(-0.01, 0.01, heartSdf(p));
+  float m = 1.0 - sstep(-0.01, 0.01, heartSdf(p));
   if (progress >= 0.999) m = 1.0;
   return mix(getFromColor(uv), getToColor(uv), m);
 }"""),
@@ -106,24 +106,24 @@ vec4 transition(vec2 uv) {
 vec4 transition(vec2 uv) {
   vec2 d = uv - 0.5;
   float a = atan(d.x, d.y) / 6.28318 + 0.5;
-  float m = smoothstep(progress - 0.02, progress + 0.02, a);
+  float m = sstep(progress - 0.02, progress + 0.02, a);
   return mix(getToColor(uv), getFromColor(uv), m);
 }"""),
         TransitionDef("zoom_in", "Zoom in", "Camera", """
 vec4 transition(vec2 uv) {
-  float p = smoothstep(0.0, 1.0, progress);
+  float p = sstep(0.0, 1.0, progress);
   vec2 fromUv = 0.5 + (uv - 0.5) / (1.0 + p * 1.5);
   vec2 toUv = 0.5 + (uv - 0.5) * (1.6 - 0.6 * p);
   vec4 to = inside01(toUv) ? getToColor(toUv) : vec4(0.0, 0.0, 0.0, 1.0);
-  return mix(getFromColor(fromUv), to, smoothstep(0.35, 0.75, progress));
+  return mix(getFromColor(fromUv), to, sstep(0.35, 0.75, progress));
 }"""),
         TransitionDef("zoom_out", "Zoom out", "Camera", """
 vec4 transition(vec2 uv) {
-  float p = smoothstep(0.0, 1.0, progress);
+  float p = sstep(0.0, 1.0, progress);
   vec2 fromUv = 0.5 + (uv - 0.5) * (1.0 + p * 1.2);
   vec4 from = inside01(fromUv) ? getFromColor(fromUv) : vec4(0.0, 0.0, 0.0, 1.0);
   vec2 toUv = 0.5 + (uv - 0.5) / (1.6 - 0.6 * p);
-  return mix(from, getToColor(toUv), smoothstep(0.35, 0.75, progress));
+  return mix(from, getToColor(toUv), sstep(0.35, 0.75, progress));
 }"""),
         TransitionDef("cross_zoom", "Zoom blur", "Camera", """
 vec4 transition(vec2 uv) {
@@ -133,7 +133,7 @@ vec4 transition(vec2 uv) {
   for (int i = 0; i < 12; i++) {
     float s = 1.0 - strength * float(i) / 12.0;
     vec2 suv = 0.5 + dir * s;
-    acc += mix(getFromColor(suv), getToColor(suv), smoothstep(0.4, 0.6, progress));
+    acc += mix(getFromColor(suv), getToColor(suv), sstep(0.4, 0.6, progress));
   }
   return acc / 12.0;
 }"""),
@@ -154,7 +154,7 @@ vec4 transition(vec2 uv) {
   float amp = sin(progress * 3.14159) * 0.05;
   vec2 off = vec2(sin(progress * 90.0), cos(progress * 77.0)) * amp;
   vec2 suv = clamp(uv + off, 0.0, 1.0);
-  return mix(getFromColor(suv), getToColor(suv), smoothstep(0.3, 0.7, progress));
+  return mix(getFromColor(suv), getToColor(suv), sstep(0.3, 0.7, progress));
 }"""),
         TransitionDef("glitch", "Glitch", "Effect", """
 float rnd(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
@@ -198,7 +198,7 @@ vec4 transition(vec2 uv) {
   float c = cos(a), s = sin(a);
   d = vec2(c * d.x - s * d.y, s * d.x + c * d.y);
   vec2 suv = d / vec2(ratio, 1.0) + 0.5;
-  return mix(getFromColor(suv), getToColor(suv), smoothstep(0.35, 0.65, progress));
+  return mix(getFromColor(suv), getToColor(suv), sstep(0.35, 0.65, progress));
 }"""),
         TransitionDef("ripple", "Ripple", "Effect", """
 vec4 transition(vec2 uv) {
@@ -221,7 +221,7 @@ vec4 transition(vec2 uv) {
 }"""),
         TransitionDef("doorway", "Doorway", "Effect", """
 vec4 transition(vec2 uv) {
-  float p = smoothstep(0.0, 1.0, progress);
+  float p = sstep(0.0, 1.0, progress);
   float hw = 0.5 * p;
   if (uv.x < 0.5 - hw) return getFromColor(vec2(uv.x + hw, uv.y));
   if (uv.x > 0.5 + hw) return getFromColor(vec2(uv.x - hw, uv.y));
@@ -232,7 +232,7 @@ vec4 transition(vec2 uv) {
 vec4 transition(vec2 uv) {
   float n = fract(sin(dot(floor(uv * 9.0), vec2(12.9898, 78.233))) * 43758.5453);
   float glow = sin(progress * 3.14159);
-  vec4 c = mix(getFromColor(uv), getToColor(uv), smoothstep(0.3, 0.7, progress + (n - 0.5) * 0.3));
+  vec4 c = mix(getFromColor(uv), getToColor(uv), sstep(0.3, 0.7, progress + (n - 0.5) * 0.3));
   return c + vec4(1.0, 0.55, 0.2, 0.0) * glow * (0.6 + 0.4 * uv.x);
 }"""),
     )

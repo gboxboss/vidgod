@@ -415,25 +415,25 @@ float maskAlpha(vec2 luv) {
   float f = max(uMaskQ.y, 0.002);
   float a = 1.0;
   if (uMaskType < 0.5) {
-a = smoothstep(-f, f, p.y);
+a = sstep(-f, f, p.y);
   } else if (uMaskType < 1.5) {
-a = 1.0 - smoothstep(uMaskP.w * 0.5 - f, uMaskP.w * 0.5 + f, abs(p.y));
+a = 1.0 - sstep(uMaskP.w * 0.5 - f, uMaskP.w * 0.5 + f, abs(p.y));
   } else if (uMaskType < 2.5) {
 vec2 r = max(vec2(uMaskP.z * asp, uMaskP.w) * 0.5, vec2(0.001));
 float d = (length(p / r) - 1.0) * min(r.x, r.y);
-a = 1.0 - smoothstep(-f, f, d);
+a = 1.0 - sstep(-f, f, d);
   } else if (uMaskType < 3.5) {
 vec2 b = vec2(uMaskP.z * asp, uMaskP.w) * 0.5;
 float d = sdBox(p, b, uMaskQ.w * min(b.x, b.y));
-a = 1.0 - smoothstep(-f, f, d);
+a = 1.0 - sstep(-f, f, d);
   } else if (uMaskType < 4.5) {
 float sc = max(uMaskP.w, 0.01);
 float d = sdHeart(p / sc) * sc;
-a = 1.0 - smoothstep(-f, f, d);
+a = 1.0 - sstep(-f, f, d);
   } else {
 float sc = max(uMaskP.w, 0.01);
 float d = sdStar(p / sc, 0.5, 0.45) * sc;
-a = 1.0 - smoothstep(-f, f, d);
+a = 1.0 - sstep(-f, f, d);
   }
   return uMaskQ.z > 0.5 ? 1.0 - a : a;
 }
@@ -453,7 +453,7 @@ void main() {
   if (uChroma.a > 0.5) {
 float d = distance(cbcr(c.rgb), cbcr(uChroma.rgb));
 float lo = 0.02 + uChromaP.x * 0.22;
-float key = smoothstep(lo, lo + 0.04 + uChromaP.y * 0.12, d);
+float key = sstep(lo, lo + 0.04 + uChromaP.y * 0.12, d);
 c.a *= key;
 float spill = 1.0 - key;
 float lum = luma(c.rgb);
@@ -462,7 +462,7 @@ c.rgb = mix(c.rgb, vec3(lum), spill * 0.6);
   float a = c.a * cov * uOpacity * maskAlpha(luv);
   if (uWipe.x < 0.999) {
 float coord = uWipe.y < 0.5 ? luv.x : (uWipe.y < 1.5 ? 1.0 - luv.x : (uWipe.y < 2.5 ? luv.y : 1.0 - luv.y));
-a *= 1.0 - smoothstep(uWipe.x - 0.03, uWipe.x, coord);
+a *= 1.0 - sstep(uWipe.x - 0.03, uWipe.x, coord);
   }
   c.rgb = mix(c.rgb, vec3(1.0), clamp(uBright, 0.0, 1.0));
   if (uBgMode > 0.5) {

@@ -93,6 +93,7 @@ object SpeedCurves {
 /** Timeline <-> source time helpers for visual clips. */
 fun VisualClip.timelineToSourceUs(offsetUs: Long): Long {
     val o = offsetUs.coerceIn(0, durationUs)
+    if (o >= durationUs) return trimEndUs
     return when {
         isImage -> trimStartUs + o
         speedCurve.isNotEmpty() -> trimStartUs + SpeedCurves.timelineToSource(sourceRangeUs, speedCurve, o)

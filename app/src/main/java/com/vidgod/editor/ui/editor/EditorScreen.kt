@@ -357,6 +357,7 @@ private fun Toolbar(vm: EditorViewModel, project: Project, selection: Selection?
             Tool(Icons.Default.AspectRatio, "Ratio") { vm.openPanel(Panel.RATIO) },
             Tool(Icons.Default.Wallpaper, "Canvas") { vm.openPanel(Panel.CANVAS) },
             Tool(Icons.Default.Reorder, "Reorder") { vm.openPanel(Panel.REORDER) },
+            Tool(Icons.Default.ContentCut, "Auto cut") { com.vidgod.editor.features.SilenceCutter.run(vm, context) },
         )
         is Selection.Main, is Selection.Overlay -> {
             val clip = (project.clips + project.overlays).firstOrNull { it.id == selection.id }
@@ -412,7 +413,8 @@ private fun Toolbar(vm: EditorViewModel, project: Project, selection: Selection?
                 Tool(Icons.Default.Speed, "Speed") { vm.openPanel(Panel.SPEED) },
                 Tool(Icons.Default.RecordVoiceOver, "Voice FX", a?.voiceFx != com.vidgod.editor.model.VoiceFx.NONE) { vm.openPanel(Panel.VOICE_FX) },
                 Tool(Icons.Default.GraphicEq, "Denoise", a?.denoise == true) { vm.editAudio(selection.id) { it.copy(denoise = !it.denoise) } },
-                Tool(Icons.Default.MusicNote, "Beats") { com.vidgod.editor.features.BeatDetector.run(vm, context, selection.id) },
+                Tool(Icons.Default.MusicNote, "Beats", a?.beatsUs?.isNotEmpty() == true) { com.vidgod.editor.features.BeatDetector.run(vm, context, selection.id) },
+                Tool(Icons.Default.AutoAwesome, "Beat sync") { com.vidgod.editor.features.BeatDetector.syncCuts(vm, selection.id) },
                 Tool(Icons.Default.ContentCut, "Split") { vm.split() },
                 Tool(Icons.Default.ContentCopy, "Duplicate") { vm.duplicateSelected() },
                 Tool(Icons.Default.Delete, "Delete") { vm.deleteSelected() },

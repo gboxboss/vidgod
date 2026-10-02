@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Audiotrack
+import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Mic
@@ -59,6 +60,7 @@ import com.vidgod.editor.ui.common.ToolButton
 import com.vidgod.editor.ui.common.formatTime
 import com.vidgod.editor.ui.editor.EditorActions
 import com.vidgod.editor.ui.theme.VG
+import kotlinx.coroutines.launch
 
 @Composable
 fun RatioPanel(vm: EditorViewModel, p: Project, close: () -> Unit) {
@@ -181,17 +183,31 @@ fun ReorderPanel(vm: EditorViewModel, p: Project, close: () -> Unit) {
 
 @Composable
 fun AudioMenuPanel(vm: EditorViewModel, actions: EditorActions, close: () -> Unit) {
+    val context = LocalContext.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
     Column(Modifier.fillMaxSize()) {
         PanelHeader("Audio", close)
-        Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp, vertical = 12.dp)) {
+        Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp, vertical = 6.dp)) {
             ToolButton(Icons.Default.LibraryMusic, "Music", actions.pickAudio)
             ToolButton(Icons.Default.Audiotrack, "Extract", actions.pickExtractAudio)
             ToolButton(Icons.Default.Mic, "Voiceover", { vm.openPanel(Panel.RECORD) })
             ToolButton(Icons.Default.RecordVoiceOver, "Text to speech", { vm.openPanel(Panel.TTS) })
+            ToolButton(Icons.Default.ContentCut, "Remove silences", { com.vidgod.editor.features.SilenceCutter.run(vm, context) })
         }
-        Text(
-            "Music: pick any audio file on your phone (MP3, M4A, WAV…).\nExtract: use the sound of another video.",
-            color = VG.TextDim, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 16.dp),
-        )
+        Text("Sound effects", color = VG.TextDim, fontSize = 12.sp, modifier = Modifier.padding(start = 16.dp, top = 4.dp))
+        Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp)) {
+            com.vidgod.editor.features.SoundEffects.all.forEach { sfx ->
+                com.vidgod.editor.ui.common.ChoiceTile(sfx.name, false, {
+                    scope.launch {
+                        val f = com.vidgod.editor.features.SoundEffects.file(context, sfx)
+                        val src = com.vidgod.editor.data.MediaProbe.probe(context, android.net.Uri.fromFile(f), com.vidgod.editor.model.MediaKind.AUDIO)
+                        if (src != null) {
+                            vm.addAudioSource(src.copy(name = sfx.name), com.vidgod.editor.model.AudioKind.SFX)
+                            vm.toast("${sfx.name} added at the playhead")
+                        }
+                    }
+                }) { Text(sfx.emoji, fontSize = 24.sp) }
+            }
+        }
     }
 }
