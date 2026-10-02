@@ -200,10 +200,8 @@ class UiFlowTest {
                 Thread.sleep(1200)
                 device.pressHome()
                 Thread.sleep(2500)
-                T.app.startActivity(
-                    Intent(T.app, MainActivity::class.java)
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT),
-                )
+                // Back to the app (through the shell, which may start activities from the background).
+                device.executeShellCommand("am start -n ${T.app.packageName}/${MainActivity::class.java.name}")
                 check(device.wait(Until.hasObject(By.desc("Play")), 10_000)) { "Still playing after the app went to the background" }
                 pause(1000)
                 val t1 = timeText()
