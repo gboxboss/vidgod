@@ -76,8 +76,11 @@ class PreviewController(private val context: Context) {
             Log.e(TAG, "Preview error", error)
             _error.value = error.message ?: error.errorCodeName
             // Recover: rebuild the player on the next update.
-            signature = null
-            handler.post { pendingProject?.let { update(it) } ?: update(live.project) }
+            if (errorRetries < 2) {
+                errorRetries++
+                signature = null
+                handler.postDelayed({ rebuildNow(pendingProject ?: live.project, fromError = true) }, 400)
+            }
         }
     }
 
@@ -110,15 +113,30 @@ class PreviewController(private val context: Context) {
         }
     }
 
-    /** Applies [project]; rebuilds the composition only when its structure changed. */
-    fun update(project: Project) {
+    private val rebuild = Runnable { pendingProject?.let { rebuildNow(it) } }
+
+    /**
+     * Applies [project]. Property changes are shown immediately; structural changes (clips,
+     * trims, speeds…) rebuild the composition, debounced so that drags stay smooth.
+     */
+    fun update(project: Project, immediate: Boolean = false) {
         pendingProject = project
         live.project = project
         val sig = Structure.signature(project) + "|" + previewShortSide
         if (sig == signature && player != null) {
+            handler.removeCallbacks(rebuild)
             redraw()
             return
         }
+        handler.removeCallbacks(rebuild)
+        if (immediate || player == null) rebuildNow(project) else handler.postDelayed(rebuild, 180)
+    }
+
+    private var errorRetries = 0
+
+    private fun rebuildNow(project: Project, fromError: Boolean = false) {
+        if (!fromError) errorRetries = 0
+        val sig = Structure.signature(project) + "|" + previewShortSide
         signature = sig
         val built = runCatching { factory.build(project, live, previewShortSide, 30) }
             .onFailure { Log.e(TAG, "Composition build failed", it); _error.value = it.message }

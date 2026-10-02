@@ -74,7 +74,7 @@ fun PreviewPane(
     vm: EditorViewModel,
     project: Project,
     selection: Selection?,
-    positionUs: Long,
+    position: androidx.compose.runtime.State<Long>,
     canvasSize: Pair<Int, Int>,
     modifier: Modifier = Modifier,
 ) {
@@ -89,7 +89,9 @@ fun PreviewPane(
                 modifier = Modifier.fillMaxSize(),
             )
             if (project.clips.isEmpty()) return@Box
-            SelectionLayer(vm, project, selection, positionUs, canvasSize)
+            if (selection != null || project.texts.isNotEmpty() || project.stickers.isNotEmpty() || project.overlays.isNotEmpty()) {
+                SelectionLayer(vm, project, selection, position.value, canvasSize)
+            }
         }
     }
 }

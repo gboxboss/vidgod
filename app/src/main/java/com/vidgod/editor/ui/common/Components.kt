@@ -115,14 +115,14 @@ fun LabeledSlider(
 ) {
     Row(modifier = modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(label, fontSize = 12.sp, color = VG.TextDim, modifier = Modifier.width(84.dp), maxLines = 1)
-        var started = false
+        val started = androidx.compose.runtime.remember { booleanArrayOf(false) }
         Slider(
             value = value.coerceIn(range.start, range.endInclusive),
             onValueChange = {
-                if (!started) { started = true; onStart() }
+                if (!started[0]) { started[0] = true; onStart() }
                 onValueChange(it)
             },
-            onValueChangeFinished = { started = false; onEnd() },
+            onValueChangeFinished = { started[0] = false; onEnd() },
             valueRange = range,
             steps = steps,
             modifier = Modifier.weight(1f),

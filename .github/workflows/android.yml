@@ -38,7 +38,10 @@ jobs:
       - name: Collect APK
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk "dist/VidGod-v1.0.${{ github.run_number }}.apk"
+          v="v1.0.${{ github.run_number }}"
+          cp app/build/outputs/apk/release/app-universal-release.apk "dist/VidGod-$v-universal.apk"
+          cp app/build/outputs/apk/release/app-arm64-v8a-release.apk "dist/VidGod-$v-arm64.apk"
+          cp app/build/outputs/apk/release/app-armeabi-v7a-release.apk "dist/VidGod-$v-arm32.apk"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -53,6 +56,8 @@ jobs:
           name: VidGod v1.0.${{ github.run_number }}
           body: |
             Automatic build of ${{ github.sha }}.
-            Download the APK below and open it on your Android phone to install (allow "install unknown apps" if asked).
+            Which APK? `arm64` fits almost every phone from 2017 onwards (smallest download).
+            `universal` works everywhere. `arm32` is for old 32-bit phones.
+            Open the APK on your phone to install (allow "install unknown apps" if asked).
           files: dist/*.apk
           make_latest: true

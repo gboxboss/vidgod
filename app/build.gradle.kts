@@ -17,10 +17,6 @@ android {
         versionCode = (System.getenv("VIDGOD_VERSION_CODE") ?: "1").toInt()
         versionName = "1.0." + (System.getenv("VIDGOD_VERSION_CODE") ?: "0")
         vectorDrawables.useSupportLibrary = true
-        ndk {
-            // Phones only; keeps the APK small (Vosk + ML Kit ship native code).
-            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
-        }
     }
 
     signingConfigs {
@@ -72,6 +68,21 @@ android {
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+        jniLibs {
+            // Compressed native libraries keep the download small (ML Kit + Vosk are large).
+            useLegacyPackaging = true
+            // Phones only: drop emulator (x86) libraries.
+            excludes += listOf("lib/x86/**", "lib/x86_64/**")
+        }
+    }
+
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "armeabi-v7a")
+            isUniversalApk = true
         }
     }
 }

@@ -15,9 +15,9 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -37,7 +37,8 @@ import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -60,6 +61,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -70,10 +72,10 @@ import com.vidgod.editor.engine.catalog.Effects
 import com.vidgod.editor.engine.catalog.Filters
 import com.vidgod.editor.media.Thumbnails
 import com.vidgod.editor.media.Waveforms
+import com.vidgod.editor.model.AudioClip
 import com.vidgod.editor.model.Project
 import com.vidgod.editor.model.StickerKind
 import com.vidgod.editor.model.VisualClip
-import com.vidgod.editor.model.sourceToTimelineUs
 import com.vidgod.editor.model.timelineToSourceUs
 import com.vidgod.editor.ui.common.formatTime
 import com.vidgod.editor.ui.theme.VG
@@ -86,8 +88,6 @@ import kotlin.math.roundToInt
 class TimelineState {
     /** Pixels per second. */
     var pxPerSec by mutableFloatStateOf(90f)
-    /** True while the user is touching the timeline. */
-    var userScrolling by mutableStateOf(false)
 
     fun usToPx(us: Long) = us / 1_000_000f * pxPerSec
     fun pxToUs(px: Float) = (px / pxPerSec * 1_000_000f).toLong()
@@ -100,11 +100,16 @@ private val ROW_AUDIO = 36.dp
 private val ROW_GAP = 4.dp
 private val HANDLE_W = 14.dp
 
+/** Converts timeline times to screen x. Reads the playhead lazily (layout/draw phase only). */
+private class Geometry(val state: TimelineState, val position: State<Long>, val half: Float) {
+    fun x(us: Long): Float = half + state.usToPx(us) - state.usToPx(position.value)
+}
+
 @Composable
 fun Timeline(
     vm: EditorViewModel,
     project: Project,
-    positionUs: Long,
+    position: State<Long>,
     selection: Selection?,
     state: TimelineState,
     onAddMedia: () -> Unit,
@@ -114,26 +119,30 @@ fun Timeline(
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
     val duration = project.durationUs
-    val currentPosition by rememberUpdatedState(positionUs)
     val currentDuration by rememberUpdatedState(duration)
     val fling = remember { Animatable(0f) }
 
     BoxWithConstraints(modifier.fillMaxWidth().background(VG.Bg)) {
         val widthPx = with(density) { maxWidth.toPx() }
         val half = widthPx / 2f
-        // x position on screen of a timeline time
-        fun xOf(us: Long): Float = half + state.usToPx(us) - state.usToPx(currentPosition)
+        val geo = remember(state, position, half) { Geometry(state, position, half) }
+        // Visible time window, quantised so that composition only changes every half screen.
+        val window by remember(state, position, half) {
+            derivedStateOf {
+                val halfUs = state.pxToUs(half).coerceAtLeast(1)
+                val q = position.value / halfUs
+                ((q - 3) * halfUs)..((q + 4) * halfUs)
+            }
+        }
 
-        // Background gestures: scroll, fling and pinch-zoom.
         val gestureModifier = Modifier.pointerInput(Unit) {
             awaitEachGesture {
                 val down = awaitFirstDown(requireUnconsumed = false)
                 scope.launch { fling.stop() }
-                state.userScrolling = true
                 vm.preview.pause()
                 vm.preview.setScrubbing(true)
                 val tracker = VelocityTracker()
-                var pos = currentPosition
+                var pos = position.value
                 var moved = false
                 tracker.addPosition(down.uptimeMillis, down.position)
                 while (true) {
@@ -170,77 +179,67 @@ fun Timeline(
                             pos = (pos + state.pxToUs(delta)).coerceIn(0, currentDuration)
                             vm.preview.seekTo(pos)
                         }
-                        state.userScrolling = false
                     }
-                } else {
-                    state.userScrolling = false
                 }
             }
         }
 
         Column(Modifier.fillMaxWidth().then(gestureModifier)) {
-            Ruler(state, widthPx, currentPosition, duration)
+            Ruler(state, geo, duration)
             Box(Modifier.fillMaxWidth().weight(1f, fill = false).verticalScroll(rememberScrollState())) {
                 Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-                    // Overlay (picture-in-picture) layers, top-most first.
                     project.overlays.map { it.layer }.distinct().sortedDescending().forEach { layer ->
                         Lane(ROW_OVERLAY) {
-                            project.overlays.filter { it.layer == layer }.forEach { c ->
-                                TimedItem(
-                                    vm, state, Selection.Overlay(c.id), selection, c.startUs, c.durationUs, ::xOf, widthPx,
-                                    VG.TrackOverlay, ROW_OVERLAY, trimmableSource = c,
-                                ) { w -> FilmStrip(c, w, ROW_OVERLAY, state) }
+                            project.overlays.filter { it.layer == layer && it.startUs <= window.last && it.endUs >= window.first }.forEach { c ->
+                                TimedItem(vm, state, geo, Selection.Overlay(c.id), selection, c.startUs, c.durationUs, VG.TrackOverlay, ROW_OVERLAY) {
+                                    FilmStrip(c, c.startUs, ROW_OVERLAY, state, window)
+                                }
                             }
                         }
                     }
-                    // Texts
                     project.texts.map { it.lane }.distinct().sorted().forEach { lane ->
                         Lane(ROW_SMALL) {
-                            project.texts.filter { it.lane == lane }.forEach { t ->
-                                TimedItem(vm, state, Selection.Text(t.id), selection, t.startUs, t.durationUs, ::xOf, widthPx, if (t.isCaption) Color(0xFFD9822B) else VG.TrackText, ROW_SMALL) {
+                            project.texts.filter { it.lane == lane && it.startUs <= window.last && it.endUs >= window.first }.forEach { t ->
+                                TimedItem(vm, state, geo, Selection.Text(t.id), selection, t.startUs, t.durationUs,
+                                    if (t.isCaption) Color(0xFFD9822B) else VG.TrackText, ROW_SMALL) {
                                     ItemLabel(if (t.isCaption) "CC  ${t.text}" else "T  ${t.text}")
                                 }
                             }
                         }
                     }
-                    // Stickers
                     project.stickers.map { it.lane }.distinct().sorted().forEach { lane ->
                         Lane(ROW_SMALL) {
-                            project.stickers.filter { it.lane == lane }.forEach { s ->
-                                TimedItem(vm, state, Selection.Sticker(s.id), selection, s.startUs, s.durationUs, ::xOf, widthPx, VG.TrackSticker, ROW_SMALL) {
+                            project.stickers.filter { it.lane == lane && it.startUs <= window.last && it.endUs >= window.first }.forEach { s ->
+                                TimedItem(vm, state, geo, Selection.Sticker(s.id), selection, s.startUs, s.durationUs, VG.TrackSticker, ROW_SMALL) {
                                     ItemLabel(if (s.kind == StickerKind.EMOJI) s.content else "Sticker")
                                 }
                             }
                         }
                     }
-                    // Effects
                     project.effects.map { it.lane }.distinct().sorted().forEach { lane ->
                         Lane(ROW_SMALL) {
-                            project.effects.filter { it.lane == lane }.forEach { e ->
-                                TimedItem(vm, state, Selection.Effect(e.id), selection, e.startUs, e.durationUs, ::xOf, widthPx, VG.TrackEffect, ROW_SMALL) {
+                            project.effects.filter { it.lane == lane && it.startUs <= window.last && it.endUs >= window.first }.forEach { e ->
+                                TimedItem(vm, state, geo, Selection.Effect(e.id), selection, e.startUs, e.durationUs, VG.TrackEffect, ROW_SMALL) {
                                     ItemLabel("✦ " + (Effects.get(e.fx.id)?.name ?: e.fx.id))
                                 }
                             }
                         }
                     }
-                    // Filters / adjustments
                     project.filters.map { it.lane }.distinct().sorted().forEach { lane ->
                         Lane(ROW_SMALL) {
-                            project.filters.filter { it.lane == lane }.forEach { f ->
-                                TimedItem(vm, state, Selection.Filter(f.id), selection, f.startUs, f.durationUs, ::xOf, widthPx, VG.TrackFilter, ROW_SMALL) {
+                            project.filters.filter { it.lane == lane && it.startUs <= window.last && it.endUs >= window.first }.forEach { f ->
+                                TimedItem(vm, state, geo, Selection.Filter(f.id), selection, f.startUs, f.durationUs, VG.TrackFilter, ROW_SMALL) {
                                     ItemLabel("◐ " + (Filters.get(f.filter?.id)?.name ?: "Adjust"))
                                 }
                             }
                         }
                     }
-                    // Main track
-                    MainTrack(vm, project, selection, state, ::xOf, widthPx, onAddMedia, onTransitionClick)
-                    // Audio
+                    MainTrack(vm, project, selection, state, geo, window, onAddMedia, onTransitionClick)
                     project.audios.map { it.lane }.distinct().sorted().forEach { lane ->
                         Lane(ROW_AUDIO) {
-                            project.audios.filter { it.lane == lane }.forEach { a ->
-                                TimedItem(vm, state, Selection.Audio(a.id), selection, a.startUs, a.durationUs, ::xOf, widthPx, VG.TrackAudio, ROW_AUDIO, audio = a) { w ->
-                                    Waveform(a.source.uri, a.trimStartUs, a.speed, w, state)
+                            project.audios.filter { it.lane == lane && it.startUs <= window.last && it.endUs >= window.first }.forEach { a ->
+                                TimedItem(vm, state, geo, Selection.Audio(a.id), selection, a.startUs, a.durationUs, VG.TrackAudio, ROW_AUDIO) {
+                                    Waveform(a, state)
                                     ItemLabel("♪ " + a.name, Modifier.align(Alignment.TopStart))
                                 }
                             }
@@ -251,19 +250,25 @@ fun Timeline(
         }
         // Playhead
         Box(
-            Modifier.offset { IntOffset((half - with(density) { 1.dp.toPx() }).roundToInt(), 0) }
+            Modifier.offset { IntOffset((half - 1.dp.toPx()).roundToInt(), 0) }
                 .width(2.dp).fillMaxHeight().background(Color.White),
         )
-        Text(
-            formatTime(positionUs, true), fontSize = 10.sp, color = Color.Black,
-            modifier = Modifier.offset { IntOffset((half + with(density) { 4.dp.toPx() }).roundToInt(), 0) }
-                .background(Color.White, RoundedCornerShape(3.dp)).padding(horizontal = 3.dp),
-        )
+        PlayheadLabel(position, half)
     }
 }
 
 @Composable
-private fun Lane(height: androidx.compose.ui.unit.Dp, content: @Composable () -> Unit) {
+private fun PlayheadLabel(position: State<Long>, half: Float) {
+    val label by remember(position) { derivedStateOf { formatTime(position.value, true) } }
+    Text(
+        label, fontSize = 10.sp, color = Color.Black,
+        modifier = Modifier.offset { IntOffset((half + 4.dp.toPx()).roundToInt(), 0) }
+            .background(Color.White, RoundedCornerShape(3.dp)).padding(horizontal = 3.dp),
+    )
+}
+
+@Composable
+private fun Lane(height: Dp, content: @Composable BoxScope.() -> Unit) {
     Box(Modifier.fillMaxWidth().height(height + ROW_GAP)) { content() }
 }
 
@@ -276,7 +281,7 @@ private fun ItemLabel(text: String, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun Ruler(state: TimelineState, widthPx: Float, positionUs: Long, durationUs: Long) {
+private fun Ruler(state: TimelineState, geo: Geometry, durationUs: Long) {
     val density = LocalDensity.current
     val labelPaint = remember {
         android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
@@ -285,7 +290,8 @@ private fun Ruler(state: TimelineState, widthPx: Float, positionUs: Long, durati
         }
     }
     Canvas(Modifier.fillMaxWidth().height(20.dp)) {
-        val half = widthPx / 2f
+        val positionUs = geo.position.value
+        val half = geo.half
         val stepSec = when {
             state.pxPerSec > 300 -> 0.25f
             state.pxPerSec > 120 -> 0.5f
@@ -308,30 +314,25 @@ private fun Ruler(state: TimelineState, widthPx: Float, positionUs: Long, durati
 
 /** A generic item on a secondary lane: tap to select, long-press-drag to move, handles to trim. */
 @Composable
-private fun TimedItem(
+private fun BoxScope.TimedItem(
     vm: EditorViewModel,
     state: TimelineState,
+    geo: Geometry,
     sel: Selection,
     current: Selection?,
     startUs: Long,
     durationUs: Long,
-    xOf: (Long) -> Float,
-    widthPx: Float,
     color: Color,
-    height: androidx.compose.ui.unit.Dp,
-    trimmableSource: VisualClip? = null,
-    audio: com.vidgod.editor.model.AudioClip? = null,
-    content: @Composable androidx.compose.foundation.layout.BoxScope.(Float) -> Unit,
+    height: Dp,
+    content: @Composable BoxScope.() -> Unit,
 ) {
     val density = LocalDensity.current
-    val x = xOf(startUs)
     val w = state.usToPx(durationUs).coerceAtLeast(with(density) { 4.dp.toPx() })
-    if (x > widthPx || x + w < 0) return
     val selected = current == sel
     val curStart by rememberUpdatedState(startUs)
     Box(
         Modifier
-            .offset { IntOffset(x.roundToInt(), 0) }
+            .offset { IntOffset(geo.x(curStart).roundToInt(), 0) }
             .width(with(density) { w.toDp() })
             .height(height)
             .clip(RoundedCornerShape(6.dp))
@@ -354,29 +355,20 @@ private fun TimedItem(
                     vm.update(record = false) { ProjectOps.moveTo(it, sel, target) }
                 }
             },
-    ) {
-        content(w)
-    }
+    ) { content() }
     if (selected) {
-        // Trim handles
-        TrimHandle(xLeft = x - with(density) { HANDLE_W.toPx() }, height = height, left = true) { dxPx, phase ->
+        TrimHandle(geo, { geo.x(curStart) - HANDLE_W.toPx() }, height, left = true) { dxPx, phase ->
             when (phase) {
                 0 -> vm.beginGesture()
                 2 -> vm.endGesture()
-                else -> {
-                    val dUs = state.pxToUs(dxPx)
-                    vm.update(record = false) { p -> trimLeft(p, sel, dUs) }
-                }
+                else -> vm.update(record = false) { p -> trimLeft(p, sel, state.pxToUs(dxPx)) }
             }
         }
-        TrimHandle(xLeft = x + w, height = height, left = false) { dxPx, phase ->
+        TrimHandle(geo, { geo.x(curStart) + w }, height, left = false) { dxPx, phase ->
             when (phase) {
                 0 -> vm.beginGesture()
                 2 -> vm.endGesture()
-                else -> {
-                    val dUs = state.pxToUs(dxPx)
-                    vm.update(record = false) { p -> trimRight(p, sel, dUs) }
-                }
+                else -> vm.update(record = false) { p -> trimRight(p, sel, state.pxToUs(dxPx)) }
             }
         }
     }
@@ -384,13 +376,24 @@ private fun TimedItem(
 
 /** Trim handle; [onDrag] receives (dx, phase) with phase 0=start 1=drag 2=end. */
 @Composable
-private fun TrimHandle(xLeft: Float, height: androidx.compose.ui.unit.Dp, left: Boolean, onDrag: (Float, Int) -> Unit) {
+private fun TrimHandle(
+    @Suppress("UNUSED_PARAMETER") geo: Geometry,
+    xLeft: androidx.compose.ui.unit.Density.() -> Float,
+    height: Dp,
+    left: Boolean,
+    onDrag: (Float, Int) -> Unit,
+) {
     Box(
         Modifier
-            .offset { IntOffset(xLeft.roundToInt(), 0) }
+            .offset { IntOffset(xLeft().roundToInt(), 0) }
             .width(HANDLE_W)
             .height(height)
-            .clip(RoundedCornerShape(topStart = if (left) 6.dp else 0.dp, bottomStart = if (left) 6.dp else 0.dp, topEnd = if (left) 0.dp else 6.dp, bottomEnd = if (left) 0.dp else 6.dp))
+            .clip(
+                RoundedCornerShape(
+                    topStart = if (left) 6.dp else 0.dp, bottomStart = if (left) 6.dp else 0.dp,
+                    topEnd = if (left) 0.dp else 6.dp, bottomEnd = if (left) 0.dp else 6.dp,
+                ),
+            )
             .background(Color.White)
             .pointerInput(Unit) {
                 detectDragGestures(
@@ -408,38 +411,38 @@ private fun TrimHandle(xLeft: Float, height: androidx.compose.ui.unit.Dp, left: 
     }
 }
 
-private fun trimLeft(p: Project, sel: Selection, dUs: Long): Project {
-    return when (sel) {
-        is Selection.Overlay -> ProjectOps.updateVisual(p, sel.id) { c ->
-            val newStart = (c.startUs + dUs).coerceIn(0, c.endUs - ProjectOps.MIN_DURATION_US)
-            val realD = newStart - c.startUs
-            val srcStart = if (c.isImage) 0 else (c.trimStartUs + (realD * c.speed).toLong()).coerceIn(0, c.trimEndUs - ProjectOps.MIN_DURATION_US)
-            if (c.isImage) c.copy(startUs = newStart, trimEndUs = (c.trimEndUs - realD).coerceAtLeast(ProjectOps.MIN_DURATION_US))
-            else c.copy(startUs = c.startUs + ((srcStart - c.trimStartUs) / c.speed).toLong(), trimStartUs = srcStart)
+private fun trimLeft(p: Project, sel: Selection, dUs: Long): Project = when (sel) {
+    is Selection.Overlay -> ProjectOps.updateVisual(p, sel.id) { c ->
+        val newStart = (c.startUs + dUs).coerceIn(0, c.endUs - ProjectOps.MIN_DURATION_US)
+        val realD = newStart - c.startUs
+        if (c.isImage) c.copy(startUs = newStart, trimEndUs = (c.trimEndUs - realD).coerceAtLeast(ProjectOps.MIN_DURATION_US))
+        else {
+            val srcStart = (c.trimStartUs + (realD * c.speed).toLong()).coerceIn(0, c.trimEndUs - ProjectOps.MIN_DURATION_US)
+            c.copy(startUs = c.startUs + ((srcStart - c.trimStartUs) / c.speed).toLong(), trimStartUs = srcStart)
         }
-        is Selection.Audio -> ProjectOps.updateAudio(p, sel.id) { a ->
-            val srcStart = (a.trimStartUs + (dUs * a.speed).toLong()).coerceIn(0, a.trimEndUs - ProjectOps.MIN_DURATION_US)
-            val realD = ((srcStart - a.trimStartUs) / a.speed).toLong()
-            a.copy(trimStartUs = srcStart, startUs = (a.startUs + realD).coerceAtLeast(0))
-        }
-        is Selection.Text -> ProjectOps.updateText(p, sel.id) { t ->
-            val ns = (t.startUs + dUs).coerceIn(0, t.endUs - ProjectOps.MIN_DURATION_US)
-            t.copy(startUs = ns, durationUs = t.endUs - ns)
-        }
-        is Selection.Sticker -> ProjectOps.updateSticker(p, sel.id) { t ->
-            val ns = (t.startUs + dUs).coerceIn(0, t.endUs - ProjectOps.MIN_DURATION_US)
-            t.copy(startUs = ns, durationUs = t.endUs - ns)
-        }
-        is Selection.Effect -> ProjectOps.updateEffect(p, sel.id) { t ->
-            val ns = (t.startUs + dUs).coerceIn(0, t.endUs - ProjectOps.MIN_DURATION_US)
-            t.copy(startUs = ns, durationUs = t.endUs - ns)
-        }
-        is Selection.Filter -> ProjectOps.updateFilter(p, sel.id) { t ->
-            val ns = (t.startUs + dUs).coerceIn(0, t.endUs - ProjectOps.MIN_DURATION_US)
-            t.copy(startUs = ns, durationUs = t.endUs - ns)
-        }
-        is Selection.Main -> p
     }
+    is Selection.Audio -> ProjectOps.updateAudio(p, sel.id) { a ->
+        val srcStart = (a.trimStartUs + (dUs * a.speed).toLong()).coerceIn(0, a.trimEndUs - ProjectOps.MIN_DURATION_US)
+        val realD = ((srcStart - a.trimStartUs) / a.speed).toLong()
+        a.copy(trimStartUs = srcStart, startUs = (a.startUs + realD).coerceAtLeast(0))
+    }
+    is Selection.Text -> ProjectOps.updateText(p, sel.id) { t ->
+        val ns = (t.startUs + dUs).coerceIn(0, t.endUs - ProjectOps.MIN_DURATION_US)
+        t.copy(startUs = ns, durationUs = t.endUs - ns)
+    }
+    is Selection.Sticker -> ProjectOps.updateSticker(p, sel.id) { t ->
+        val ns = (t.startUs + dUs).coerceIn(0, t.endUs - ProjectOps.MIN_DURATION_US)
+        t.copy(startUs = ns, durationUs = t.endUs - ns)
+    }
+    is Selection.Effect -> ProjectOps.updateEffect(p, sel.id) { t ->
+        val ns = (t.startUs + dUs).coerceIn(0, t.endUs - ProjectOps.MIN_DURATION_US)
+        t.copy(startUs = ns, durationUs = t.endUs - ns)
+    }
+    is Selection.Filter -> ProjectOps.updateFilter(p, sel.id) { t ->
+        val ns = (t.startUs + dUs).coerceIn(0, t.endUs - ProjectOps.MIN_DURATION_US)
+        t.copy(startUs = ns, durationUs = t.endUs - ns)
+    }
+    is Selection.Main -> p
 }
 
 private fun trimRight(p: Project, sel: Selection, dUs: Long): Project = when (sel) {
@@ -463,18 +466,16 @@ private fun MainTrack(
     project: Project,
     selection: Selection?,
     state: TimelineState,
-    xOf: (Long) -> Float,
-    widthPx: Float,
+    geo: Geometry,
+    window: LongRange,
     onAddMedia: () -> Unit,
     onTransitionClick: (String) -> Unit,
 ) {
     val density = LocalDensity.current
     val starts = project.clipStarts()
     Box(Modifier.fillMaxWidth().height(ROW_MAIN + 8.dp).padding(vertical = 4.dp)) {
-        // Mute toggle left of the track start
-        val startX = xOf(0)
         Box(
-            Modifier.offset { IntOffset((startX - with(density) { 64.dp.toPx() }).roundToInt(), 0) }
+            Modifier.offset { IntOffset((geo.x(0) - 64.dp.toPx()).roundToInt(), 0) }
                 .size(52.dp, ROW_MAIN)
                 .clip(RoundedCornerShape(8.dp))
                 .background(VG.Surface2)
@@ -490,14 +491,15 @@ private fun MainTrack(
             }
         }
         project.clips.forEachIndexed { i, clip ->
-            val x = xOf(starts[i])
-            val w = state.usToPx(clip.durationUs)
-            if (x <= widthPx && x + w >= 0) {
+            val start = starts[i]
+            val end = start + clip.durationUs
+            if (start <= window.last && end >= window.first) {
+                val w = state.usToPx(clip.durationUs)
                 val sel = Selection.Main(clip.id)
                 val selected = selection == sel
                 Box(
                     Modifier
-                        .offset { IntOffset(x.roundToInt(), 0) }
+                        .offset { IntOffset(geo.x(start).roundToInt(), 0) }
                         .width(with(density) { w.toDp() })
                         .height(ROW_MAIN)
                         .clip(RoundedCornerShape(6.dp))
@@ -507,12 +509,13 @@ private fun MainTrack(
                             detectTapGestures(onTap = { vm.select(if (vm.selection.value == sel) null else sel) })
                         },
                 ) {
-                    FilmStrip(clip, w, ROW_MAIN, state)
+                    FilmStrip(clip, start, ROW_MAIN, state, window)
                     val badges = buildList {
                         if (clip.speed != 1f || clip.speedCurve.isNotEmpty()) add(if (clip.speedCurve.isNotEmpty()) "Curve" else "${"%.1f".format(clip.speed)}x")
                         if (clip.isReversed) add("Reversed")
                         if (clip.muted) add("Muted")
                         if (clip.filter != null) add("Filter")
+                        if (clip.removeBackground) add("No BG")
                         if (clip.keyframes.isNotEmpty()) add("◆")
                     }
                     if (badges.isNotEmpty()) {
@@ -528,30 +531,25 @@ private fun MainTrack(
                             .background(Color(0x99000000), RoundedCornerShape(3.dp)).padding(horizontal = 3.dp),
                     )
                 }
-                if (selected) MainTrimHandles(vm, clip, x, w, state)
+                if (selected) MainTrimHandles(vm, clip, start, w, geo, state)
             }
-            // Transition button between clips
-            if (i < project.clips.size - 1) {
-                val bx = xOf(starts[i] + clip.durationUs)
-                if (bx > -40 && bx < widthPx + 40) {
-                    val has = clip.transitionOut != null
-                    Box(
-                        Modifier.offset { IntOffset((bx - with(density) { 11.dp.toPx() }).roundToInt(), with(density) { 16.dp.toPx() }.roundToInt()) }
-                            .size(22.dp)
-                            .clip(RoundedCornerShape(5.dp))
-                            .background(if (has) VG.Accent else Color.White)
-                            .clickable { onTransitionClick(clip.id) },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(Icons.Default.SwapHoriz, "Transition", tint = Color.Black, modifier = Modifier.size(15.dp))
-                    }
+            if (i < project.clips.size - 1 && end >= window.first && end <= window.last) {
+                val has = clip.transitionOut != null
+                Box(
+                    Modifier.offset { IntOffset((geo.x(end) - 11.dp.toPx()).roundToInt(), 16.dp.toPx().roundToInt()) }
+                        .size(22.dp)
+                        .clip(RoundedCornerShape(5.dp))
+                        .background(if (has) VG.Accent else Color.White)
+                        .clickable { onTransitionClick(clip.id) },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.Default.SwapHoriz, "Transition", tint = Color.Black, modifier = Modifier.size(15.dp))
                 }
             }
         }
-        // Add button after the last clip
-        val endX = xOf(project.mainDurationUs)
+        val mainEnd = project.mainDurationUs
         Box(
-            Modifier.offset { IntOffset((endX + with(density) { 12.dp.toPx() }).roundToInt(), with(density) { 8.dp.toPx() }.roundToInt()) }
+            Modifier.offset { IntOffset((geo.x(mainEnd) + 12.dp.toPx()).roundToInt(), 8.dp.toPx().roundToInt()) }
                 .size(40.dp)
                 .clip(RoundedCornerShape(8.dp))
                 .background(Color.White)
@@ -562,11 +560,10 @@ private fun MainTrack(
 }
 
 @Composable
-private fun MainTrimHandles(vm: EditorViewModel, clip: VisualClip, x: Float, w: Float, state: TimelineState) {
-    val density = LocalDensity.current
+private fun MainTrimHandles(vm: EditorViewModel, clip: VisualClip, start: Long, w: Float, geo: Geometry, state: TimelineState) {
     var origin by remember { mutableStateOf<VisualClip?>(null) }
     var acc by remember { mutableFloatStateOf(0f) }
-    TrimHandle(x - with(density) { HANDLE_W.toPx() }, ROW_MAIN, true) { dx, phase ->
+    TrimHandle(geo, { geo.x(start) - HANDLE_W.toPx() }, ROW_MAIN, true) { dx, phase ->
         when (phase) {
             0 -> { vm.beginGesture(); origin = vm.project.value.clips.firstOrNull { it.id == clip.id }; acc = 0f }
             2 -> { vm.endGesture(); origin = null }
@@ -577,14 +574,14 @@ private fun MainTrimHandles(vm: EditorViewModel, clip: VisualClip, x: Float, w: 
                 vm.editVisual(clip.id, record = false) {
                     if (o.isImage) o.copy(trimEndUs = (o.trimEndUs - dUs).coerceAtLeast(ProjectOps.MIN_DURATION_US))
                     else {
-                        val newSrc = o.timelineToSourceUs(dUs.coerceAtLeast(0)).let { if (dUs < 0) o.trimStartUs + (dUs * o.speed).toLong() else it }
+                        val newSrc = if (dUs >= 0) o.timelineToSourceUs(dUs) else o.trimStartUs + (dUs * o.speed).toLong()
                         ProjectOps.clampKeyframes(ProjectOps.trimVisual(o, newSrc, o.trimEndUs))
                     }
                 }
             }
         }
     }
-    TrimHandle(x + w, ROW_MAIN, false) { dx, phase ->
+    TrimHandle(geo, { geo.x(start) + w }, ROW_MAIN, false) { dx, phase ->
         when (phase) {
             0 -> { vm.beginGesture(); origin = vm.project.value.clips.firstOrNull { it.id == clip.id }; acc = 0f }
             2 -> { vm.endGesture(); origin = null }
@@ -605,19 +602,24 @@ private fun MainTrimHandles(vm: EditorViewModel, clip: VisualClip, x: Float, w: 
     }
 }
 
-/** Thumbnails of a visual clip spread over its width on the timeline. */
+/** Thumbnails of a visual clip; only those inside the visible [window] are composed. */
 @Composable
-private fun FilmStrip(clip: VisualClip, widthPx: Float, height: androidx.compose.ui.unit.Dp, state: TimelineState) {
+private fun BoxScope.FilmStrip(clip: VisualClip, clipStartUs: Long, height: Dp, state: TimelineState, window: LongRange) {
     val density = LocalDensity.current
     val context = LocalContext.current
     val thumbW = with(density) { (height * 0.8f).toPx() }
-    val count = (widthPx / thumbW).toInt().coerceIn(1, 400)
-    Row(Modifier.fillMaxSize()) {
-        for (i in 0 until count) {
-            val offsetUs = state.pxToUs((i + 0.5f) * thumbW).coerceAtMost(clip.durationUs)
-            val srcUs = if (clip.isImage) 0 else clip.timelineToSourceUs(offsetUs)
-            Thumb(context, clip.playbackUri, srcUs, clip.isImage, Modifier.width(with(density) { thumbW.toDp() }).fillMaxHeight())
-        }
+    val widthPx = state.usToPx(clip.durationUs)
+    val count = (widthPx / thumbW).toInt().coerceAtLeast(1) + 1
+    val thumbUs = state.pxToUs(thumbW).coerceAtLeast(1)
+    val first = ((window.first - clipStartUs) / thumbUs).toInt().coerceIn(0, count - 1)
+    val last = ((window.last - clipStartUs) / thumbUs).toInt().coerceIn(0, count - 1)
+    for (i in first..last) {
+        val offsetUs = (thumbUs * i + thumbUs / 2).coerceAtMost(clip.durationUs)
+        val srcUs = if (clip.isImage) 0 else clip.timelineToSourceUs(offsetUs)
+        Thumb(
+            context, clip.playbackUri, srcUs, clip.isImage,
+            Modifier.offset { IntOffset((i * thumbW).roundToInt(), 0) }.width(with(density) { thumbW.toDp() }).fillMaxHeight(),
+        )
     }
 }
 
@@ -633,27 +635,26 @@ private fun Thumb(context: Context, uri: String, timeUs: Long, isImage: Boolean,
 }
 
 @Composable
-private fun Waveform(uri: String, trimStartUs: Long, speed: Float, widthPx: Float, state: TimelineState) {
+private fun Waveform(a: AudioClip, state: TimelineState) {
     val context = LocalContext.current
-    val peaks by produceState<FloatArray?>(null, uri) { value = Waveforms.peaks(context, uri) }
-    val p = peaks ?: return
+    val peaks by produceState<FloatArray?>(null, a.source.uri) { value = Waveforms.peaks(context, a.source.uri) }
+    val p = peaks
     Canvas(Modifier.fillMaxSize()) {
-        val bars = (widthPx / 4f).toInt().coerceAtLeast(1)
-        for (b in 0 until bars) {
-            val x = b * 4f
-            val srcUs = trimStartUs + (state.pxToUs(x) * speed).toLong()
-            val idx = (srcUs / 1_000_000.0 * Waveforms.RATE).toInt()
-            val v = if (idx in p.indices) p[idx] else 0f
-            val h = size.height * 0.85f * v.coerceAtLeast(0.04f)
-            drawLine(Color(0xCCFFFFFF), Offset(x, size.height / 2 - h / 2), Offset(x, size.height / 2 + h / 2), 2f)
+        if (p != null) {
+            val bars = (size.width / 4f).toInt().coerceAtLeast(1)
+            for (b in 0 until bars) {
+                val x = b * 4f
+                val srcUs = a.trimStartUs + (state.pxToUs(x) * a.speed).toLong()
+                val idx = (srcUs / 1_000_000.0 * Waveforms.RATE).toInt()
+                val v = if (idx in p.indices) p[idx] else 0f
+                val h = size.height * 0.85f * v.coerceAtLeast(0.04f)
+                drawLine(Color(0xCCFFFFFF), Offset(x, size.height / 2 - h / 2), Offset(x, size.height / 2 + h / 2), 2f)
+            }
+        }
+        // Beat markers
+        for (beat in a.beatsUs) {
+            val x = state.usToPx(((beat - a.trimStartUs) / a.speed).toLong())
+            if (x in 0f..size.width) drawCircle(Color(0xFFFFD60A), 3.5f, Offset(x, size.height - 5f))
         }
     }
-}
-
-/** Keeps playback and the timeline in sync: pinch zoom default on first composition. */
-@Composable
-fun rememberTimelineState(): TimelineState {
-    val s = remember { TimelineState() }
-    LaunchedEffect(Unit) { }
-    return s
 }

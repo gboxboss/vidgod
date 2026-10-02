@@ -4,8 +4,9 @@ Every "pro" feature unlocked, no watermark, exports in the format TikTok likes
 (MP4 · H.264 High · AAC · 1080×1920 · 30/60 fps · fast-start).
 
 ## Download
-Every push to `main` builds a signed APK: open the **Releases** page of this repo and
-download `VidGod-v1.0.<n>.apk`, then open it on your phone (allow "install unknown apps").
+Every push to `main` builds signed APKs: open the **Releases** page of this repo and
+download `VidGod-v1.0.<n>-arm64.apk` (almost every phone from 2017 on; ~15 MB) or the
+`-universal` APK, then open it on your phone (allow "install unknown apps").
 
 ## Features
 **Editing:** multi-track timeline (main track, picture-in-picture overlays, text, stickers,

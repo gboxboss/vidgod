@@ -114,7 +114,7 @@ fun EditorScreen(projectId: String, initialAction: String?, onBack: () -> Unit) 
     val loaded by vm.loaded.collectAsState()
     val selection by vm.selection.collectAsState()
     val panel by vm.panel.collectAsState()
-    val positionUs by vm.preview.positionUs.collectAsState()
+    val positionState = vm.preview.positionUs.collectAsState()
     val playing by vm.preview.isPlaying.collectAsState()
     val canvasSize by vm.preview.canvasSize.collectAsState()
     val busy by vm.busy.collectAsState()
@@ -187,15 +187,15 @@ fun EditorScreen(projectId: String, initialAction: String?, onBack: () -> Unit) 
                 onClose = onBack,
                 onExport = { vm.preview.pause(); vm.openPanel(Panel.EXPORT) },
             )
-            PreviewPane(vm, project, selection, positionUs, canvasSize, Modifier.weight(1f).fillMaxWidth())
+            PreviewPane(vm, project, selection, positionState, canvasSize, Modifier.weight(1f).fillMaxWidth())
             ControlsRow(
-                positionUs = positionUs,
+                vm = vm,
+                position = positionState,
                 durationUs = project.durationUs,
                 playing = playing,
                 canUndo = canUndo,
                 canRedo = canRedo,
                 keyframeVisible = selection != null && selection !is Selection.Audio && selection !is Selection.Effect && selection !is Selection.Filter,
-                keyframeActive = remember(project, selection, positionUs) { vm.hasKeyframeAtPlayhead() },
                 onPlay = { vm.preview.togglePlay() },
                 onUndo = vm::undo,
                 onRedo = vm::redo,
@@ -203,14 +203,14 @@ fun EditorScreen(projectId: String, initialAction: String?, onBack: () -> Unit) 
             )
             if (panel != null && panel != Panel.EXPORT) {
                 Box(Modifier.fillMaxWidth().height(320.dp).background(VG.Surface)) {
-                    PanelHost(vm, panel!!, project, selection, positionUs, actions)
+                    PanelHost(vm, panel!!, project, selection, positionState.value, actions)
                 }
             } else {
                 if (project.clips.isEmpty() && loaded) {
                     EmptyTimeline(onAdd = actions.pickMain)
                 } else {
                     Timeline(
-                        vm, project, positionUs, selection, timeline,
+                        vm, project, positionState, selection, timeline,
                         onAddMedia = actions.pickMain,
                         onTransitionClick = { id ->
                             vm.select(Selection.Main(id))
@@ -284,13 +284,13 @@ private fun TopBar(project: Project, onClose: () -> Unit, onExport: () -> Unit) 
 
 @Composable
 private fun ControlsRow(
-    positionUs: Long,
+    vm: EditorViewModel,
+    position: androidx.compose.runtime.State<Long>,
     durationUs: Long,
     playing: Boolean,
     canUndo: Boolean,
     canRedo: Boolean,
     keyframeVisible: Boolean,
-    keyframeActive: Boolean,
     onPlay: () -> Unit,
     onUndo: () -> Unit,
     onRedo: () -> Unit,
@@ -300,6 +300,8 @@ private fun ControlsRow(
         Modifier.fillMaxWidth().height(44.dp).padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        val positionUs = position.value
+        val keyframeActive = remember(positionUs / 40_000, vm.project.collectAsState().value, vm.selection.collectAsState().value) { vm.hasKeyframeAtPlayhead() }
         Text(
             "${formatTime(positionUs)} / ${formatTime(durationUs)}", fontSize = 12.sp, color = VG.TextDim,
             modifier = Modifier.width(110.dp),
